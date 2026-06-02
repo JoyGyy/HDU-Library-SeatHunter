@@ -133,5 +133,8 @@ config.yaml
 session.json
 schedule.json
 
+# logs
+logs/
+
 # example
 examples
