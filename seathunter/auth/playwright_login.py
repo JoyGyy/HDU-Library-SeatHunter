@@ -20,7 +20,7 @@ LOGIN_ERR_AUTH = "auth"
 
 def playwright_login(username: str, password: str, library_url: str,
                      base_url: str) -> Tuple[bool, Optional[str],
-                                              Optional[List[Dict]], Optional[str], Optional[str]]:
+                                              Optional[List[Dict]], Optional[str], Optional[str], str]:
     """Perform Playwright browser-based HDU CAS SSO login.
 
     Args:
@@ -30,12 +30,13 @@ def playwright_login(username: str, password: str, library_url: str,
         base_url: Base API URL for user info extraction.
 
     Returns:
-        (success, error_type, cookies, uid, name) tuple.
+        (success, error_type, cookies, uid, name, error_msg) tuple.
         - success: Whether login succeeded.
         - error_type: "network", "auth", or None.
         - cookies: List of cookie dicts from Playwright.
         - uid: User ID string.
         - name: User display name.
+        - error_msg: Detailed error message on failure.
     """
     try:
         from playwright.async_api import async_playwright
@@ -103,6 +104,9 @@ def playwright_login(username: str, password: str, library_url: str,
 
             logger.info("Filling in credentials...")
             await username_input.fill(str(username))
+            # 触发 Angular 表单验证
+            await username_input.dispatch_event("input")
+            await username_input.dispatch_event("change")
 
             # Wait for password input
             password_selectors = [
@@ -125,13 +129,20 @@ def playwright_login(username: str, password: str, library_url: str,
                 return False, None, "", "", "auth"
 
             await password_input.fill(str(password))
+            # 触发 Angular 表单验证
+            await password_input.dispatch_event("input")
+            await password_input.dispatch_event("change")
 
-            # Submit login
-            logger.info("Submitting login...")
+            # 等待登录按钮变为可用（Angular Ant Design 用 CSS class 控制 disabled）
+            logger.info("Waiting for login button to be enabled...")
             login_btn = None
-            for selector in ['button[type="submit"]', 'button:has-text("登录")']:
+            for selector in [
+                'button[type="submit"]:not(.disabled)',
+                'button[type="submit"]',
+                'button:has-text("登录")',
+            ]:
                 try:
-                    login_btn = await page.wait_for_selector(selector, timeout=3000)
+                    login_btn = await page.wait_for_selector(selector, timeout=5000)
                     if login_btn:
                         break
                 except Exception:
@@ -142,17 +153,39 @@ def playwright_login(username: str, password: str, library_url: str,
                 await browser.close()
                 return False, None, "", "", "auth"
 
+            # 确保按钮可用
+            for _ in range(10):
+                is_disabled = await login_btn.evaluate(
+                    "el => el.disabled || el.classList.contains('disabled')"
+                )
+                if not is_disabled:
+                    break
+                await asyncio.sleep(0.5)
+
+            logger.info("Submitting login...")
             await login_btn.click()
 
             logger.info("Waiting for login completion...")
             try:
                 await page.wait_for_url("**/huitu.zhishulib.com/**", timeout=30000)
             except Exception:
-                await asyncio.sleep(5)
+                await asyncio.sleep(3)
 
             current_url = page.url
             if "huitu.zhishulib.com" not in current_url:
-                logger.error("Login may have failed, current URL: %s", current_url)
+                # 尝试提取页面上的错误信息
+                error_msg = ""
+                try:
+                    for sel in ['.error-msg', '.ant-message-error', '[class*="error"]']:
+                        el = await page.query_selector(sel)
+                        if el:
+                            text = (await el.inner_text()).strip()
+                            if text:
+                                error_msg = text
+                                break
+                except Exception:
+                    pass
+                logger.error("Login failed: %s (URL: %s)", error_msg or "unknown", current_url)
                 await browser.close()
                 return False, None, "", "", "auth"
 
@@ -190,11 +223,11 @@ def playwright_login(username: str, password: str, library_url: str,
         success, cookies, uid, name, err = asyncio.run(_login())
     except Exception as e:
         logger.error("Login exception: %s", e)
-        return (False, LOGIN_ERR_NETWORK, None, "", "")
+        return (False, LOGIN_ERR_NETWORK, None, "", "", str(e))
 
     if not success or not cookies:
         if err and any(k in str(err) for k in ["CONNECTION_RESET", "CONNECTION_REFUSED", "ERR_NAME", "timeout"]):
-            return (False, LOGIN_ERR_NETWORK, None, "", "")
-        return (False, LOGIN_ERR_AUTH, None, "", "")
+            return (False, LOGIN_ERR_NETWORK, None, "", "", "")
+        return (False, LOGIN_ERR_AUTH, None, "", "", err or "")
 
-    return (True, None, cookies, uid, name)
+    return (True, None, cookies, uid, name, "")

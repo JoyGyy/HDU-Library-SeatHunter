@@ -101,7 +101,8 @@ class CliUI:
                         else:
                             sys.exit(1)
                 else:
-                    print_error("账号密码错误，请重新输入")
+                    err_detail = self.session_mgr.last_error
+                    print_error(err_detail if err_detail else "账号密码错误，请重新输入")
                     self._set_user_info()
             else:
                 self._set_user_info()

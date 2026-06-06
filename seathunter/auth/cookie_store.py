@@ -42,7 +42,10 @@ class CookieStore:
         try:
             with open(self.cookie_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            saved_at = dt.datetime.fromisoformat(data["saved_at"])
+            saved_at_str = data.get("saved_at", "")
+            if not saved_at_str:
+                return None
+            saved_at = dt.datetime.fromisoformat(saved_at_str)
             if (dt.datetime.now() - saved_at).days >= COOKIE_EXPIRY_DAYS:
                 logger.info("Cached cookies expired (saved %d days ago)", (dt.datetime.now() - saved_at).days)
                 return None

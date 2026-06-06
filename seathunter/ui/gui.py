@@ -449,7 +449,8 @@ class GuiApp:
             if err_type == "network":
                 msg = "网络连接失败，请检查校园网连接"
             else:
-                msg = "账号密码错误，请重新输入"
+                err_detail = self.session_mgr.last_error
+                msg = err_detail if err_detail else "账号密码错误，请重新输入"
             if dlg and dlg.winfo_exists():
                 dlg._status_label.config(text=msg, foreground="red")
             else:

@@ -28,6 +28,7 @@ class SessionManager:
         self.uid: str = ""
         self.name: str = ""
         self._cookie_login_network_err = False
+        self.last_error: str = ""
 
     @property
     def base_url(self) -> str:
@@ -113,7 +114,7 @@ class SessionManager:
     def _login_with_playwright(self) -> Tuple[bool, Optional[str]]:
         """Login using Playwright browser automation."""
         user = self.user_info
-        success, err_type, cookies, uid, name = playwright_login(
+        success, err_type, cookies, uid, name, err_msg = playwright_login(
             username=user.get("login_name", ""),
             password=user.get("password", ""),
             library_url=self.base_url + "/",
@@ -121,6 +122,7 @@ class SessionManager:
         )
 
         if not success:
+            self.last_error = err_msg
             return (False, err_type)
 
         # Apply cookies to session
