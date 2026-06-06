@@ -183,7 +183,7 @@ class SchedulerEngine:
 
                 # Booking phase - execute for each grouped trigger's plans
                 logger.info("Trigger time reached (%d schedule(s)), booking for %s (%s)",
-                           len(triggers),
+                           len(grouped),
                            target_date.strftime("%Y-%m-%d"),
                            WEEKDAY_NAMES[target_date.weekday()])
 
