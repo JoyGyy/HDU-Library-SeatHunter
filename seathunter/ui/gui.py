@@ -534,11 +534,11 @@ class GuiApp:
 
         dlg = tk.Toplevel(self.root)
         dlg.title("添加方案")
-        dlg.geometry("450x460")
+        dlg.geometry("500x460")
         dlg.resizable(False, False)
         dlg.transient(self.root)
         dlg.grab_set()
-        self._center_on_parent(dlg, 450, 460)
+        self._center_on_parent(dlg, 500, 460)
 
         frame = ttk.Frame(dlg, padding=15)
         frame.pack(fill=tk.BOTH, expand=True)
@@ -588,8 +588,8 @@ class GuiApp:
         # Booker UIDs
         ttk.Label(frame, text="预约人UID:").grid(row=7, column=0, sticky=tk.W, pady=4)
         bookers_var = tk.StringVar()
-        bookers_entry = ttk.Entry(frame, textvariable=bookers_var, width=25)
-        bookers_entry.grid(row=7, column=1, pady=4)
+        bookers_entry = ttk.Entry(frame, textvariable=bookers_var, width=20)
+        bookers_entry.grid(row=7, column=1, sticky=tk.W, pady=4)
 
         def pick_uid():
             records = self.uid_store.get_all()
@@ -637,7 +637,7 @@ class GuiApp:
             ttk.Button(bf, text="确认", command=confirm).pack(side=tk.LEFT, padx=5)
             ttk.Button(bf, text="取消", command=pick_dlg.destroy).pack(side=tk.LEFT, padx=5)
 
-        ttk.Button(frame, text="选择", command=pick_uid).grid(row=7, column=2, padx=4)
+        ttk.Button(frame, text="从记录中选择", command=pick_uid).grid(row=7, column=2, padx=4, sticky=tk.W)
 
         # Plan ID
         ttk.Label(frame, text="方案ID:").grid(row=8, column=0, sticky=tk.W, pady=4)
