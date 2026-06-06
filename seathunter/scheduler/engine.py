@@ -118,43 +118,36 @@ class SchedulerEngine:
                 schedules = self.config.get_schedules()
                 plans_map = {p.id: p for p in self.config.get_plans()}
 
-                # Find the earliest trigger time and collect ALL schedules at that time
+                # 收集所有调度的触发信息，按 (trigger_time, target_date) 分组
                 now = datetime.now()
-                earliest_trigger = None
-                triggers = []  # list of (trigger, target_date, plan_ids)
+                all_triggers = []  # list of (trigger, target_date, plan_ids)
                 for schedule in schedules:
                     result = schedule.next_trigger(now)
                     if result is not None:
-                        trigger, target_date, plan_ids = result
-                        if earliest_trigger is None or trigger < earliest_trigger:
-                            earliest_trigger = trigger
-                            triggers = [(trigger, target_date, plan_ids)]
-                        elif trigger == earliest_trigger:
-                            triggers.append((trigger, target_date, plan_ids))
+                        all_triggers.append(result)
 
-                if earliest_trigger is None:
+                if not all_triggers:
                     with self._state_lock:
                         self._current_trigger = None
                         self._current_target = None
                         self._current_plan_ids = []
                     if self.on_idle:
                         self.on_idle()
-                    # Wait and re-check
                     self._stop_event.wait(timeout=30.0)
                     continue
 
-                # Merge plan_ids from all grouped triggers (deduplicate)
-                trigger_time = earliest_trigger
-                all_plan_ids = []
-                seen_pids = set()
-                for _, target_date, plan_ids in triggers:
-                    for pid in plan_ids:
-                        if pid not in seen_pids:
-                            seen_pids.add(pid)
-                            all_plan_ids.append(pid)
+                # 按 (trigger_time, target_date) 分组合并 plan_ids
+                grouped = {}  # (trigger, target_date) -> set of plan_ids
+                for trigger, target_date, plan_ids in all_triggers:
+                    key = (trigger, target_date.date())
+                    if key not in grouped:
+                        grouped[key] = (trigger, target_date, set())
+                    grouped[key][2].update(plan_ids)
 
-                # Use the first trigger's target_date (they typically match)
-                target_date = triggers[0][1]
+                # 找最早的触发时间
+                earliest_key = min(grouped.keys(), key=lambda k: k[0])
+                trigger_time, target_date, all_plan_ids = grouped[earliest_key]
+                all_plan_ids = list(all_plan_ids)
 
                 # Update state
                 with self._state_lock:
@@ -170,8 +163,10 @@ class SchedulerEngine:
                     continue
 
                 plan_desc = ", ".join(f"{p.room_name}-{p.seats[0].seat_num}" for p in active_plans if p.seats)
-                if len(triggers) > 1:
-                    plan_desc = f"[{len(triggers)}个调度] " + plan_desc
+                # 显示有多少个调度合并执行
+                group_count = len(grouped[earliest_key][2])
+                if group_count > 1:
+                    plan_desc = f"[{group_count}个方案] " + plan_desc
 
                 # Countdown phase (interruptible, 1-second ticks)
                 while not self._stop_event.is_set():

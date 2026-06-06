@@ -90,7 +90,7 @@ class Schedule:
     def _next_trigger_weekdays(self, now: datetime) -> Optional[Tuple[datetime, datetime, List[str]]]:
         """Find next trigger for weekday-based schedule.
 
-        窗口已开（触发时间已过）但目标日期未到 → 立即触发。
+        窗口已开但今天已过开放时间 → 跳过今天，找下一个匹配天。
         """
         # Convert 1-7 to Python weekday 0-6
         py_weekdays = [(w - 1) % 7 for w in self.target_weekdays]
@@ -105,8 +105,11 @@ class Schedule:
                 )
                 if trigger > now:
                     return (trigger, candidate, self.plan_ids)
+                elif delta == 0:
+                    # 今天已过开放时间，跳过，找下一天
+                    continue
                 else:
-                    # 触发时间已过但目标日期未到，立即触发
+                    # 未来日期窗口已开，立即触发
                     return (now + timedelta(seconds=1), candidate, self.plan_ids)
         return None
 
