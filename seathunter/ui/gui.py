@@ -590,9 +590,54 @@ class GuiApp:
         bookers_var = tk.StringVar()
         bookers_entry = ttk.Entry(frame, textvariable=bookers_var, width=25)
         bookers_entry.grid(row=7, column=1, pady=4)
-        ttk.Label(frame, text="在「状态」页查看UID", foreground="gray").grid(
-            row=7, column=2, sticky=tk.W, padx=4,
-        )
+
+        def pick_uid():
+            records = self.uid_store.get_all()
+            if not records:
+                messagebox.showinfo("提示", "暂无已保存的UID记录，请先在「状态」页查询", parent=dlg)
+                return
+            # 弹出选择对话框
+            pick_dlg = tk.Toplevel(dlg)
+            pick_dlg.title("选择预约人")
+            pick_dlg.geometry("350x280")
+            pick_dlg.resizable(False, False)
+            pick_dlg.transient(dlg)
+            pick_dlg.grab_set()
+            self._center_on_parent(pick_dlg, 350, 280)
+
+            pf = ttk.Frame(pick_dlg, padding=10)
+            pf.pack(fill=tk.BOTH, expand=True)
+
+            ttk.Label(pf, text="点击选择，可多选", foreground="gray").pack(anchor=tk.W)
+
+            # 复选框列表
+            vars_map = {}
+            for sid, info in records.items():
+                var = tk.BooleanVar()
+                uid = info.get("uid", "")
+                name = info.get("name", "")
+                ttk.Checkbutton(
+                    pf, text=f"{sid}  UID:{uid}  {name}", variable=var,
+                ).pack(anchor=tk.W, pady=2)
+                vars_map[sid] = (var, uid)
+
+            def confirm():
+                selected_uids = [uid for sid, (var, uid) in vars_map.items() if var.get() and uid]
+                if selected_uids:
+                    current = bookers_var.get().strip()
+                    new_val = ",".join(selected_uids)
+                    if current:
+                        bookers_var.set(current + "," + new_val)
+                    else:
+                        bookers_var.set(new_val)
+                pick_dlg.destroy()
+
+            bf = ttk.Frame(pf)
+            bf.pack(fill=tk.X, pady=10)
+            ttk.Button(bf, text="确认", command=confirm).pack(side=tk.LEFT, padx=5)
+            ttk.Button(bf, text="取消", command=pick_dlg.destroy).pack(side=tk.LEFT, padx=5)
+
+        ttk.Button(frame, text="选择", command=pick_uid).grid(row=7, column=2, padx=4)
 
         # Plan ID
         ttk.Label(frame, text="方案ID:").grid(row=8, column=0, sticky=tk.W, pady=4)
