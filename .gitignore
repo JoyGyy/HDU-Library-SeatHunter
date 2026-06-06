@@ -128,13 +128,20 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
-# config file
-config.yaml
-session.json
-schedule.json
+# config file (contains credentials)
+config/config.yaml
+config/session.json
+config/schedule.json
 
 # logs
 logs/
+
+# macOS
+.DS_Store
+
+# build artifacts
+dist/
+*.spec
 
 # example
 examples
