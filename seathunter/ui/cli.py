@@ -188,13 +188,17 @@ class CliUI:
         print_info(f"当前共有{len(plans)}个预约方案")
         if not plans:
             return
-        headers = ["序号", "方案ID", "房间名", "楼层名", "座位号", "开始时间", "时长"]
+        headers = ["序号", "方案ID", "房间名", "楼层名", "座位号", "预约人", "开始时间", "时长"]
         rows = []
         for i, plan in enumerate(plans):
             seats_str = ",".join(s.seat_num for s in plan.seats)
+            bookers_str = ",".join(
+                s.booker_uid if s.booker_uid else "自己"
+                for s in plan.seats
+            )
             rows.append([
                 str(i + 1), plan.id, plan.room_name, plan.floor_name,
-                seats_str, plan.begin_time, f"{plan.duration_hours}小时"
+                seats_str, bookers_str, plan.begin_time, f"{plan.duration_hours}小时"
             ])
         print_table(headers, rows)
 
@@ -264,8 +268,12 @@ class CliUI:
             seats_input = input("请输入座位号（多个用逗号隔开，如1,2,3）：")
             seat_nums = [s.strip() for s in seats_input.split(",") if s.strip()]
 
+            # 预约人学号
+            bookers_input = input("请输入预约人学号（逗号分隔，留空默认自己）：").strip()
+            booker_uids = [b.strip() for b in bookers_input.split(",") if b.strip()] if bookers_input else []
+
             seat_list = []
-            for seat_num in seat_nums:
+            for i, seat_num in enumerate(seat_nums):
                 matched = [s for s in seats_info if s["title"] == seat_num]
                 if not matched:
                     print_error(f"{floor_name}中座位{seat_num}不存在")
@@ -273,9 +281,11 @@ class CliUI:
                 if len(matched) > 1:
                     print_error(f"座位{seat_num}存在多个匹配")
                     return
+                uid = booker_uids[i] if i < len(booker_uids) else ""
                 seat_list.append(SeatInfo(
                     seat_id=str(matched[0]["id"]),
                     seat_num=matched[0]["title"],
+                    booker_uid=uid,
                 ))
 
             plan_id = input("请输入方案ID（用于标识，如 morning_A42）：").strip()

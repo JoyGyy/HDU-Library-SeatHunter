@@ -12,13 +12,21 @@ class SeatInfo:
     """A single seat within a plan."""
     seat_id: str
     seat_num: str
+    booker_uid: str = ""  # 预约人学号，为空时使用登录用户的 UID
 
     def to_dict(self) -> Dict[str, str]:
-        return {"seat_id": self.seat_id, "seat_num": self.seat_num}
+        d = {"seat_id": self.seat_id, "seat_num": self.seat_num}
+        if self.booker_uid:
+            d["booker_uid"] = self.booker_uid
+        return d
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "SeatInfo":
-        return cls(seat_id=str(data["seat_id"]), seat_num=str(data["seat_num"]))
+        return cls(
+            seat_id=str(data["seat_id"]),
+            seat_num=str(data["seat_num"]),
+            booker_uid=str(data.get("booker_uid", "")),
+        )
 
 
 @dataclass

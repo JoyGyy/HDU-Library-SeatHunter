@@ -473,7 +473,10 @@ class GuiApp:
             self.plans_tree.delete(item)
         plans = self.config.get_plans()
         for i, plan in enumerate(plans):
-            seats_str = ",".join(s.seat_num for s in plan.seats)
+            seats_str = ",".join(
+                f"{s.seat_num}({s.booker_uid})" if s.booker_uid else s.seat_num
+                for s in plan.seats
+            )
             self.plans_tree.insert("", tk.END, iid=str(i), values=(
                 i + 1, plan.id, plan.room_name, plan.floor_name,
                 seats_str, plan.begin_time, f"{plan.duration_hours}小时",
@@ -491,11 +494,11 @@ class GuiApp:
 
         dlg = tk.Toplevel(self.root)
         dlg.title("添加方案")
-        dlg.geometry("420x380")
+        dlg.geometry("420x420")
         dlg.resizable(False, False)
         dlg.transient(self.root)
         dlg.grab_set()
-        self._center_on_parent(dlg, 420, 380)
+        self._center_on_parent(dlg, 420, 420)
 
         frame = ttk.Frame(dlg, padding=15)
         frame.pack(fill=tk.BOTH, expand=True)
@@ -534,8 +537,17 @@ class GuiApp:
         seats_var = tk.StringVar()
         ttk.Entry(frame, textvariable=seats_var, width=25).grid(row=5, column=1, pady=4)
 
+        # Booker UIDs
+        ttk.Label(frame, text="预约人学号:").grid(row=6, column=0, sticky=tk.W, pady=4)
+        bookers_var = tk.StringVar()
+        bookers_entry = ttk.Entry(frame, textvariable=bookers_var, width=25)
+        bookers_entry.grid(row=6, column=1, pady=4)
+        ttk.Label(frame, text="逗号分隔，留空默认自己", foreground="gray").grid(
+            row=6, column=2, sticky=tk.W, padx=4,
+        )
+
         # Plan ID
-        ttk.Label(frame, text="方案ID:").grid(row=6, column=0, sticky=tk.W, pady=4)
+        ttk.Label(frame, text="方案ID:").grid(row=7, column=0, sticky=tk.W, pady=4)
         plan_id_var = tk.StringVar()
         ttk.Entry(frame, textvariable=plan_id_var, width=25).grid(row=6, column=1, pady=4)
 
@@ -559,18 +571,19 @@ class GuiApp:
 
         # Buttons
         btn_frame = ttk.Frame(frame)
-        btn_frame.grid(row=7, column=0, columnspan=2, pady=15)
+        btn_frame.grid(row=8, column=0, columnspan=2, pady=15)
         ttk.Button(
             btn_frame, text="确认",
-            command=lambda: self._confirm_add_plan(dlg, room_var, floor_var, time_var, dur_var, seats_var, plan_id_var),
+            command=lambda: self._confirm_add_plan(dlg, room_var, floor_var, time_var, dur_var, seats_var, bookers_var, plan_id_var),
         ).pack(side=tk.LEFT, padx=10)
         ttk.Button(btn_frame, text="取消", command=dlg.destroy).pack(side=tk.LEFT, padx=10)
 
-    def _confirm_add_plan(self, dlg, room_var, floor_var, time_var, dur_var, seats_var, plan_id_var):
+    def _confirm_add_plan(self, dlg, room_var, floor_var, time_var, dur_var, seats_var, bookers_var, plan_id_var):
         room_name = room_var.get().strip()
         floor_name = floor_var.get().strip()
         time_str = time_var.get().strip()
         seats_input = seats_var.get().strip()
+        bookers_input = bookers_var.get().strip()
         plan_id = plan_id_var.get().strip()
 
         if not room_name or not floor_name:
@@ -621,9 +634,14 @@ class GuiApp:
             messagebox.showerror("错误", "请输入至少一个座位号", parent=dlg)
             return
 
+        # 解析预约人学号
+        booker_uids = []
+        if bookers_input:
+            booker_uids = [b.strip() for b in bookers_input.replace("，", ",").split(",") if b.strip()]
+
         seats_info = self.room_cache.get_seats(room_name, floor_name)
         seat_list = []
-        for seat_num in seat_nums:
+        for i, seat_num in enumerate(seat_nums):
             matched = [s for s in seats_info if s["title"] == seat_num]
             if not matched:
                 messagebox.showerror("错误", f"{floor_name}中座位{seat_num}不存在", parent=dlg)
@@ -631,7 +649,12 @@ class GuiApp:
             if len(matched) > 1:
                 messagebox.showerror("错误", f"座位{seat_num}存在多个匹配", parent=dlg)
                 return
-            seat_list.append(SeatInfo(seat_id=str(matched[0]["id"]), seat_num=matched[0]["title"]))
+            uid = booker_uids[i] if i < len(booker_uids) else ""
+            seat_list.append(SeatInfo(
+                seat_id=str(matched[0]["id"]),
+                seat_num=matched[0]["title"],
+                booker_uid=uid,
+            ))
 
         if not plan_id:
             plan_id = f"plan_{datetime.now().strftime('%H%M%S')}"
@@ -747,7 +770,10 @@ class GuiApp:
             self.booking_tree.delete(item)
         plans = self.config.get_plans()
         for plan in plans:
-            seats_str = ",".join(s.seat_num for s in plan.seats)
+            seats_str = ",".join(
+                f"{s.seat_num}({s.booker_uid})" if s.booker_uid else s.seat_num
+                for s in plan.seats
+            )
             self.booking_tree.insert("", tk.END, values=(
                 plan.id, plan.room_name, plan.floor_name,
                 seats_str, plan.begin_time, f"{plan.duration_hours}小时",
@@ -811,7 +837,10 @@ class GuiApp:
                 begin_time = now.replace(hour=h, minute=m, second=s, microsecond=0)
 
                 seat_ids = [seat.seat_id for seat in plan.seats]
-                booker_uids = [self.session_mgr.uid] * len(plan.seats)
+                booker_uids = [
+                    seat.booker_uid if seat.booker_uid else self.session_mgr.uid
+                    for seat in plan.seats
+                ]
 
                 try:
                     resp = self.api.book_seat(begin_time, plan.duration_hours, seat_ids, booker_uids)
@@ -829,10 +858,14 @@ class GuiApp:
                         0, self._append_booking_log,
                         f"[{ts}] 方案 {plan.id} 预约成功！", "success",
                     )
+                    seats_detail = ", ".join(
+                        f"{s.seat_num}(学号:{s.booker_uid})" if s.booker_uid else s.seat_num
+                        for s in plan.seats
+                    )
                     self.root.after(
                         0, self._append_booking_log,
                         f"  房间: {plan.room_name} | 楼层: {plan.floor_name} | "
-                        f"座位: {','.join(s.seat_num for s in plan.seats)} | "
+                        f"座位: {seats_detail} | "
                         f"时间: {plan.begin_time} | 时长: {plan.duration_hours}小时",
                         "success",
                     )

@@ -71,9 +71,12 @@ class BookingRunner:
                 hour, minute, second = (int(x) for x in plan.begin_time.split(":"))
                 begin_time = target_date.replace(hour=hour, minute=minute, second=second, microsecond=0)
 
-                # Get seat IDs and booker UIDs
+                # Get seat IDs and booker UIDs (支持多人预约)
                 seat_ids = [s.seat_id for s in plan.seats]
-                booker_uids = [self.session_mgr.uid] * len(plan.seats)
+                booker_uids = [
+                    s.booker_uid if s.booker_uid else self.session_mgr.uid
+                    for s in plan.seats
+                ]
 
                 result = self._book_single_plan(plan, begin_time, seat_ids, booker_uids, target_date)
                 results.append(result)
