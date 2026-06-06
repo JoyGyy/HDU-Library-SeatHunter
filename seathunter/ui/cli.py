@@ -79,6 +79,9 @@ class CliUI:
                 success, err_type = self.session_mgr.login()
                 if success:
                     print_success("登录成功")
+                    print_info(f"你的 UID: {self.session_mgr.uid}")
+                    print_info(f"你的姓名: {self.session_mgr.name}")
+                    print_warning("提示：给朋友预约时，需要填写对方的 UID（不是学号）")
                     self.config.save()
                     # Start room data refresh in background
                     self.room_cache.start_background_refresh()
@@ -268,8 +271,8 @@ class CliUI:
             seats_input = input("请输入座位号（多个用逗号隔开，如1,2,3）：")
             seat_nums = [s.strip() for s in seats_input.split(",") if s.strip()]
 
-            # 预约人学号
-            bookers_input = input("请输入预约人学号（逗号分隔，留空默认自己）：").strip()
+            # 预约人UID
+            bookers_input = input("请输入预约人UID（逗号分隔，留空默认自己，UID在登录后显示）：").strip()
             booker_uids = [b.strip() for b in bookers_input.split(",") if b.strip()] if bookers_input else []
 
             seat_list = []

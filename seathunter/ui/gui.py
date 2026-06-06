@@ -295,6 +295,26 @@ class GuiApp:
         frame = ttk.Frame(self.notebook, padding=20)
         self.notebook.add(frame, text="状态")
 
+        # 用户信息
+        user_frame = ttk.LabelFrame(frame, text="当前用户", padding=15)
+        user_frame.pack(fill=tk.X, pady=(0, 10))
+
+        self.user_info_labels = {}
+        for i, (key, label_text) in enumerate([
+            ("uid", "UID"),
+            ("name", "姓名"),
+        ]):
+            ttk.Label(user_frame, text=f"{label_text}:", font=("", 10, "bold")).grid(
+                row=i, column=0, sticky=tk.W, pady=4,
+            )
+            lbl = ttk.Label(user_frame, text="—", font=("", 10))
+            lbl.grid(row=i, column=1, sticky=tk.W, padx=(15, 0), pady=4)
+            self.user_info_labels[key] = lbl
+
+        ttk.Label(user_frame, text="（给朋友预约时需要填写对方的 UID）", foreground="gray").grid(
+            row=2, column=0, columnspan=2, sticky=tk.W, pady=(4, 0),
+        )
+
         info_frame = ttk.LabelFrame(frame, text="调度引擎状态", padding=15)
         info_frame.pack(fill=tk.X)
 
@@ -442,6 +462,8 @@ class GuiApp:
             self.status_bar.config(text="登录成功")
             if dlg and dlg.winfo_exists():
                 dlg.destroy()
+            # 更新用户信息显示
+            self._update_user_info()
             # Start room data refresh
             self.room_cache.on_ready(self._on_rooms_ready)
             self.room_cache.start_background_refresh()
@@ -538,11 +560,11 @@ class GuiApp:
         ttk.Entry(frame, textvariable=seats_var, width=25).grid(row=5, column=1, pady=4)
 
         # Booker UIDs
-        ttk.Label(frame, text="预约人学号:").grid(row=6, column=0, sticky=tk.W, pady=4)
+        ttk.Label(frame, text="预约人UID:").grid(row=6, column=0, sticky=tk.W, pady=4)
         bookers_var = tk.StringVar()
         bookers_entry = ttk.Entry(frame, textvariable=bookers_var, width=25)
         bookers_entry.grid(row=6, column=1, pady=4)
-        ttk.Label(frame, text="逗号分隔，留空默认自己", foreground="gray").grid(
+        ttk.Label(frame, text="在「状态」页查看UID", foreground="gray").grid(
             row=6, column=2, sticky=tk.W, padx=4,
         )
 
@@ -1161,6 +1183,15 @@ class GuiApp:
     # ================================================================
     # Status
     # ================================================================
+
+    def _update_user_info(self):
+        """更新用户信息显示"""
+        if not hasattr(self, 'user_info_labels'):
+            return
+        uid = self.session_mgr.uid
+        name = self.session_mgr.name
+        self.user_info_labels["uid"].config(text=uid or "—")
+        self.user_info_labels["name"].config(text=name or "—")
 
     def _update_status_display(self):
         if not self.status_labels:
