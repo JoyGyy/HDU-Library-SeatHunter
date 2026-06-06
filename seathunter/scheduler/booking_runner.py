@@ -67,9 +67,16 @@ class BookingRunner:
                 if self._cancelled:
                     break
 
+                # 使用方案中的目标日期（如有），否则用调度传入的日期
+                if plan.target_date:
+                    from datetime import datetime as dt
+                    plan_date = dt.strptime(plan.target_date, "%Y-%m-%d")
+                else:
+                    plan_date = target_date
+
                 # Build the actual datetime for the plan
                 hour, minute, second = (int(x) for x in plan.begin_time.split(":"))
-                begin_time = target_date.replace(hour=hour, minute=minute, second=second, microsecond=0)
+                begin_time = plan_date.replace(hour=hour, minute=minute, second=second, microsecond=0)
 
                 # Get seat IDs and booker UIDs (支持多人预约)
                 seat_ids = [s.seat_id for s in plan.seats]
@@ -78,7 +85,7 @@ class BookingRunner:
                     for s in plan.seats
                 ]
 
-                result = self._book_single_plan(plan, begin_time, seat_ids, booker_uids, target_date)
+                result = self._book_single_plan(plan, begin_time, seat_ids, booker_uids, plan_date)
                 results.append(result)
 
                 if on_result:

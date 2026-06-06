@@ -534,11 +534,11 @@ class GuiApp:
 
         dlg = tk.Toplevel(self.root)
         dlg.title("添加方案")
-        dlg.geometry("420x420")
+        dlg.geometry("450x460")
         dlg.resizable(False, False)
         dlg.transient(self.root)
         dlg.grab_set()
-        self._center_on_parent(dlg, 420, 420)
+        self._center_on_parent(dlg, 450, 460)
 
         frame = ttk.Frame(dlg, padding=15)
         frame.pack(fill=tk.BOTH, expand=True)
@@ -561,35 +561,43 @@ class GuiApp:
         hours_label = ttk.Label(frame, text="", foreground="gray")
         hours_label.grid(row=2, column=0, columnspan=2, sticky=tk.W, pady=2)
 
+        # Date
+        ttk.Label(frame, text="目标日期:").grid(row=3, column=0, sticky=tk.W, pady=4)
+        date_var = tk.StringVar()
+        ttk.Entry(frame, textvariable=date_var, width=25).grid(row=3, column=1, pady=4)
+        ttk.Label(frame, text="YYYY-MM-DD，留空手动抢座时用今天", foreground="gray").grid(
+            row=3, column=2, sticky=tk.W, padx=4,
+        )
+
         # Time
-        ttk.Label(frame, text="开始时间:").grid(row=3, column=0, sticky=tk.W, pady=4)
+        ttk.Label(frame, text="开始时间:").grid(row=4, column=0, sticky=tk.W, pady=4)
         time_var = tk.StringVar(value="08:00:00")
-        ttk.Entry(frame, textvariable=time_var, width=25).grid(row=3, column=1, pady=4)
+        ttk.Entry(frame, textvariable=time_var, width=25).grid(row=4, column=1, pady=4)
 
         # Duration
-        ttk.Label(frame, text="使用时长(小时):").grid(row=4, column=0, sticky=tk.W, pady=4)
+        ttk.Label(frame, text="使用时长(小时):").grid(row=5, column=0, sticky=tk.W, pady=4)
         dur_var = tk.StringVar(value="4")
         dur_spin = ttk.Spinbox(frame, from_=1, to=24, textvariable=dur_var, width=22)
-        dur_spin.grid(row=4, column=1, pady=4)
+        dur_spin.grid(row=5, column=1, pady=4)
 
         # Seats
-        ttk.Label(frame, text="座位号(逗号分隔):").grid(row=5, column=0, sticky=tk.W, pady=4)
+        ttk.Label(frame, text="座位号(逗号分隔):").grid(row=6, column=0, sticky=tk.W, pady=4)
         seats_var = tk.StringVar()
-        ttk.Entry(frame, textvariable=seats_var, width=25).grid(row=5, column=1, pady=4)
+        ttk.Entry(frame, textvariable=seats_var, width=25).grid(row=6, column=1, pady=4)
 
         # Booker UIDs
-        ttk.Label(frame, text="预约人UID:").grid(row=6, column=0, sticky=tk.W, pady=4)
+        ttk.Label(frame, text="预约人UID:").grid(row=7, column=0, sticky=tk.W, pady=4)
         bookers_var = tk.StringVar()
         bookers_entry = ttk.Entry(frame, textvariable=bookers_var, width=25)
-        bookers_entry.grid(row=6, column=1, pady=4)
+        bookers_entry.grid(row=7, column=1, pady=4)
         ttk.Label(frame, text="在「状态」页查看UID", foreground="gray").grid(
-            row=6, column=2, sticky=tk.W, padx=4,
+            row=7, column=2, sticky=tk.W, padx=4,
         )
 
         # Plan ID
-        ttk.Label(frame, text="方案ID:").grid(row=7, column=0, sticky=tk.W, pady=4)
+        ttk.Label(frame, text="方案ID:").grid(row=8, column=0, sticky=tk.W, pady=4)
         plan_id_var = tk.StringVar()
-        ttk.Entry(frame, textvariable=plan_id_var, width=25).grid(row=6, column=1, pady=4)
+        ttk.Entry(frame, textvariable=plan_id_var, width=25).grid(row=8, column=1, pady=4)
 
         def on_room_selected(event):
             room_name = room_var.get()
@@ -611,20 +619,29 @@ class GuiApp:
 
         # Buttons
         btn_frame = ttk.Frame(frame)
-        btn_frame.grid(row=8, column=0, columnspan=2, pady=15)
+        btn_frame.grid(row=9, column=0, columnspan=2, pady=15)
         ttk.Button(
             btn_frame, text="确认",
-            command=lambda: self._confirm_add_plan(dlg, room_var, floor_var, time_var, dur_var, seats_var, bookers_var, plan_id_var),
+            command=lambda: self._confirm_add_plan(dlg, room_var, floor_var, date_var, time_var, dur_var, seats_var, bookers_var, plan_id_var),
         ).pack(side=tk.LEFT, padx=10)
         ttk.Button(btn_frame, text="取消", command=dlg.destroy).pack(side=tk.LEFT, padx=10)
 
-    def _confirm_add_plan(self, dlg, room_var, floor_var, time_var, dur_var, seats_var, bookers_var, plan_id_var):
+    def _confirm_add_plan(self, dlg, room_var, floor_var, date_var, time_var, dur_var, seats_var, bookers_var, plan_id_var):
         room_name = room_var.get().strip()
         floor_name = floor_var.get().strip()
+        date_str = date_var.get().strip()
         time_str = time_var.get().strip()
         seats_input = seats_var.get().strip()
         bookers_input = bookers_var.get().strip()
         plan_id = plan_id_var.get().strip()
+
+        # 验证日期格式
+        if date_str:
+            try:
+                datetime.strptime(date_str, "%Y-%m-%d")
+            except ValueError:
+                messagebox.showerror("错误", "日期格式不正确，请使用 YYYY-MM-DD 格式", parent=dlg)
+                return
 
         if not room_name or not floor_name:
             messagebox.showerror("错误", "请选择房间和楼层", parent=dlg)
@@ -702,6 +719,7 @@ class GuiApp:
         plan = Plan(
             id=plan_id, room_name=room_name, floor_name=floor_name,
             begin_time=time_str, duration_hours=duration, seats=seat_list,
+            target_date=date_str,
         )
         self.config.add_plan(plan)
         self._refresh_plans_tree()
@@ -873,8 +891,13 @@ class GuiApp:
                     break
 
                 now = datetime.now()
+                # 使用方案中的目标日期（如有），否则用今天
+                if plan.target_date:
+                    plan_date = datetime.strptime(plan.target_date, "%Y-%m-%d")
+                else:
+                    plan_date = now
                 h, m, s = (int(x) for x in plan.begin_time.split(":"))
-                begin_time = now.replace(hour=h, minute=m, second=s, microsecond=0)
+                begin_time = plan_date.replace(hour=h, minute=m, second=s, microsecond=0)
 
                 seat_ids = [seat.seat_id for seat in plan.seats]
                 booker_uids = [

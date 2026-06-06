@@ -42,6 +42,7 @@ class Plan:
     begin_time: str  # HH:MM:SS format, e.g. "08:00:00"
     duration_hours: int
     seats: List[SeatInfo] = field(default_factory=list)
+    target_date: str = ""  # YYYY-MM-DD format, empty means use schedule date or today
 
     # Populated at execution time by the engine
     _room_data: Optional[Dict] = field(default=None, repr=False)
@@ -54,7 +55,7 @@ class Plan:
             raise ValueError(f"Duration must be >= 1 hour, got {self.duration_hours}")
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        d = {
             "id": self.id,
             "room_name": self.room_name,
             "floor_name": self.floor_name,
@@ -62,6 +63,9 @@ class Plan:
             "duration_hours": self.duration_hours,
             "seats": [s.to_dict() for s in self.seats],
         }
+        if self.target_date:
+            d["target_date"] = self.target_date
+        return d
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "Plan":
@@ -73,6 +77,7 @@ class Plan:
             begin_time=data["begin_time"],
             duration_hours=int(data["duration_hours"]),
             seats=seats,
+            target_date=data.get("target_date", ""),
         )
 
     def validate(self, room_data: Optional[Dict] = None) -> List[str]:
