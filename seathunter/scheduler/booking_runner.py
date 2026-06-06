@@ -84,6 +84,10 @@ class BookingRunner:
                     s.booker_uid if s.booker_uid else self.session_mgr.uid
                     for s in plan.seats
                 ]
+                # 确保当前用户在预约人列表中（API 要求）
+                if self.session_mgr.uid not in booker_uids:
+                    booker_uids[0] = self.session_mgr.uid
+                    logger.info("当前用户不在预约人列表中，已自动替换第一个预约人")
 
                 result = self._book_single_plan(plan, begin_time, seat_ids, booker_uids, plan_date)
                 results.append(result)

@@ -949,6 +949,9 @@ class GuiApp:
                     seat.booker_uid if seat.booker_uid else self.session_mgr.uid
                     for seat in plan.seats
                 ]
+                # 确保当前用户在预约人列表中
+                if self.session_mgr.uid not in booker_uids:
+                    booker_uids[0] = self.session_mgr.uid
 
                 try:
                     resp = self.api.book_seat(begin_time, plan.duration_hours, seat_ids, booker_uids)
