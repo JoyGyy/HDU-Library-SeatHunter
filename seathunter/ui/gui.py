@@ -16,7 +16,8 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 
 from seathunter.config.manager import ConfigManager
-from seathunter.auth.session_manager import SessionManager
+from seathunter.auth.session_manager import SessionManager, lookup_uid
+from seathunter.auth.uid_store import UidStore
 from seathunter.api.client import ApiClient
 from seathunter.api.room_cache import RoomCache
 from seathunter.scheduler.engine import SchedulerEngine
@@ -25,7 +26,7 @@ from seathunter.models.plan import Plan, SeatInfo
 from seathunter.models.schedule import Schedule, DateMapping
 from seathunter.models.booking_result import BookingResult
 from seathunter.ui.display import format_countdown, WEEKDAY_NAMES
-from seathunter.platform_.paths import get_app_dir
+from seathunter.platform_.paths import get_app_dir, get_config_path
 from seathunter.logging_.history import HistoryLogger
 
 logger = logging.getLogger("seathunter.ui")
@@ -57,6 +58,9 @@ class GuiApp:
             booking_runner=self.runner,
         )
         self.history = HistoryLogger()
+
+        # UID 记录存储
+        self.uid_store = UidStore(get_config_path("uids.json"))
 
         # Engine callbacks
         self.engine.on_countdown_tick = self._on_countdown_tick
@@ -311,9 +315,23 @@ class GuiApp:
             lbl.grid(row=i, column=1, sticky=tk.W, padx=(15, 0), pady=4)
             self.user_info_labels[key] = lbl
 
-        ttk.Label(user_frame, text="（给朋友预约时需要填写对方的 UID）", foreground="gray").grid(
-            row=2, column=0, columnspan=2, sticky=tk.W, pady=(4, 0),
-        )
+        btn_row = ttk.Frame(user_frame)
+        btn_row.grid(row=2, column=0, columnspan=2, sticky=tk.W, pady=(8, 0))
+        ttk.Label(btn_row, text="给朋友预约时需要对方的 UID →", foreground="gray").pack(side=tk.LEFT)
+        ttk.Button(btn_row, text="查询他人UID", command=self._lookup_uid_dialog).pack(side=tk.LEFT, padx=5)
+
+        # 已保存的 UID 记录
+        uid_frame = ttk.LabelFrame(frame, text="已保存的 UID 记录", padding=10)
+        uid_frame.pack(fill=tk.BOTH, expand=True, pady=(10, 0))
+
+        cols = ("student_id", "uid", "name")
+        self.uid_tree = ttk.Treeview(uid_frame, columns=cols, show="headings", height=6)
+        for col, text, w in [("student_id", "学号", 120), ("uid", "UID", 120), ("name", "姓名", 120)]:
+            self.uid_tree.heading(col, text=text)
+            self.uid_tree.column(col, width=w, anchor=tk.CENTER)
+        self.uid_tree.pack(fill=tk.BOTH, expand=True)
+
+        self._refresh_uid_tree()
 
         info_frame = ttk.LabelFrame(frame, text="调度引擎状态", padding=15)
         info_frame.pack(fill=tk.X)
@@ -1183,6 +1201,76 @@ class GuiApp:
     # ================================================================
     # Status
     # ================================================================
+
+    def _refresh_uid_tree(self):
+        """刷新 UID 记录列表"""
+        if not hasattr(self, 'uid_tree'):
+            return
+        for item in self.uid_tree.get_children():
+            self.uid_tree.delete(item)
+        records = self.uid_store.get_all()
+        for student_id, info in records.items():
+            self.uid_tree.insert("", tk.END, values=(
+                student_id, info.get("uid", ""), info.get("name", ""),
+            ))
+
+    def _lookup_uid_dialog(self):
+        """打开查询他人 UID 的对话框"""
+        dlg = tk.Toplevel(self.root)
+        dlg.title("查询 UID")
+        dlg.geometry("380x250")
+        dlg.resizable(False, False)
+        dlg.transient(self.root)
+        dlg.grab_set()
+        self._center_on_parent(dlg, 380, 250)
+
+        frame = ttk.Frame(dlg, padding=15)
+        frame.pack(fill=tk.BOTH, expand=True)
+
+        ttk.Label(frame, text="学号:").grid(row=0, column=0, sticky=tk.W, pady=5)
+        user_var = tk.StringVar()
+        ttk.Entry(frame, textvariable=user_var, width=25).grid(row=0, column=1, pady=5)
+
+        ttk.Label(frame, text="密码:").grid(row=1, column=0, sticky=tk.W, pady=5)
+        pwd_var = tk.StringVar()
+        ttk.Entry(frame, textvariable=pwd_var, width=25, show="*").grid(row=1, column=1, pady=5)
+
+        status_label = ttk.Label(frame, text="", foreground="blue")
+        status_label.grid(row=2, column=0, columnspan=2, pady=5)
+
+        result_label = ttk.Label(frame, text="", foreground="green", font=("", 10, "bold"))
+        result_label.grid(row=3, column=0, columnspan=2, pady=5)
+
+        def do_lookup():
+            username = user_var.get().strip()
+            password = pwd_var.get().strip()
+            if not username or not password:
+                status_label.config(text="请输入学号和密码", foreground="red")
+                return
+            status_label.config(text="正在查询，请稍候...", foreground="blue")
+            result_label.config(text="")
+            dlg.update_idletasks()
+
+            def worker():
+                success, uid, name = lookup_uid(username, password)
+                self.root.after(0, on_done, success, uid, name, username)
+
+            def on_done(success, uid, name, student_id):
+                if success:
+                    self.uid_store.set(student_id, uid, name)
+                    result_label.config(text=f"UID: {uid}  姓名: {name}")
+                    status_label.config(text="查询成功，已保存", foreground="green")
+                    self._refresh_uid_tree()
+                else:
+                    err = name  # 失败时 name 参数存放错误信息
+                    status_label.config(text=f"查询失败: {err}", foreground="red")
+
+            threading.Thread(target=worker, daemon=True).start()
+
+        btn_frame = ttk.Frame(frame)
+        btn_frame.grid(row=4, column=0, columnspan=2, pady=15)
+        ttk.Button(btn_frame, text="查询", command=do_lookup).pack(side=tk.LEFT, padx=10)
+        ttk.Button(btn_frame, text="关闭", command=dlg.destroy).pack(side=tk.LEFT, padx=10)
 
     def _update_user_info(self):
         """更新用户信息显示"""

@@ -88,7 +88,10 @@ class Schedule:
         return None
 
     def _next_trigger_weekdays(self, now: datetime) -> Optional[Tuple[datetime, datetime, List[str]]]:
-        """Find next trigger for weekday-based schedule."""
+        """Find next trigger for weekday-based schedule.
+
+        窗口已开（触发时间已过）但目标日期未到 → 立即触发。
+        """
         # Convert 1-7 to Python weekday 0-6
         py_weekdays = [(w - 1) % 7 for w in self.target_weekdays]
 
@@ -102,17 +105,32 @@ class Schedule:
                 )
                 if trigger > now:
                     return (trigger, candidate, self.plan_ids)
+                else:
+                    # 触发时间已过但目标日期未到，立即触发
+                    return (now + timedelta(seconds=1), candidate, self.plan_ids)
         return None
 
     def _next_trigger_dates(self, now: datetime) -> Optional[Tuple[datetime, datetime, List[str]]]:
-        """Find next trigger for date-based schedule."""
+        """Find next trigger for date-based schedule.
+
+        窗口已开（触发时间已过）但目标日期未到 → 立即触发（用 now 作为 trigger）。
+        """
         best = None
         for mapping in self.mappings:
             target_date = datetime.strptime(mapping.target_date, "%Y-%m-%d")
+            # 目标日期已过，跳过
+            if target_date.date() < now.date():
+                continue
             trigger = target_date.replace(hour=20, minute=0, second=0) - timedelta(
                 days=BOOKING_ADVANCE_DAYS
             )
             if trigger > now:
+                # 未到触发时间，正常倒计时
                 if best is None or trigger < best[0]:
                     best = (trigger, target_date, mapping.plan_ids)
+            else:
+                # 触发时间已过但目标日期未到，立即触发
+                immediate = now + timedelta(seconds=1)
+                if best is None or immediate < best[0]:
+                    best = (immediate, target_date, mapping.plan_ids)
         return best

@@ -162,3 +162,25 @@ def json_dumps_truncate(data, max_len=200):
     import json
     s = json.dumps(data, ensure_ascii=False)
     return s[:max_len] + "..." if len(s) > max_len else s
+
+
+def lookup_uid(username: str, password: str, base_url: str = "https://hdu.huitu.zhishulib.com") -> Tuple[bool, str, str]:
+    """通过学号密码查询 UID。
+
+    Args:
+        username: 学号
+        password: 密码
+        base_url: 图书馆地址
+
+    Returns:
+        (success, uid, name) 成功时 uid 有值，失败时 uid 为空
+    """
+    success, err_type, cookies, uid, name, err_msg = playwright_login(
+        username=username,
+        password=password,
+        library_url=base_url + "/",
+        base_url=base_url,
+    )
+    if success:
+        return (True, uid, name)
+    return (False, "", err_msg)

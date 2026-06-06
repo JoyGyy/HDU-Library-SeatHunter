@@ -16,7 +16,8 @@ from time import sleep
 from pwinput import pwinput
 
 from seathunter.config.manager import ConfigManager
-from seathunter.auth.session_manager import SessionManager
+from seathunter.auth.session_manager import SessionManager, lookup_uid
+from seathunter.auth.uid_store import UidStore
 from seathunter.api.client import ApiClient
 from seathunter.api.room_cache import RoomCache
 from seathunter.scheduler.engine import SchedulerEngine
@@ -28,7 +29,7 @@ from seathunter.ui.display import (
     Color, colorize, print_table, print_success, print_error,
     print_warning, print_info, print_countdown, WEEKDAY_NAMES,
 )
-from seathunter.platform_.paths import get_app_dir
+from seathunter.platform_.paths import get_app_dir, get_config_path
 from seathunter.logging_.history import HistoryLogger
 
 logger = logging.getLogger("seathunter.ui")
@@ -60,6 +61,7 @@ class CliUI:
             booking_runner=self.runner,
         )
         self.history = HistoryLogger()
+        self.uid_store = UidStore(get_config_path("uids.json"))
 
         # Engine callbacks
         self.engine.on_countdown_tick = self._on_countdown_tick
@@ -124,8 +126,9 @@ class CliUI:
         print("4. 启动/管理定时调度")
         print("5. 查看调度状态")
         print("6. 修改请求间隔和次数")
-        print("7. 使用帮助")
-        print("8. 退出")
+        print("7. 查询他人 UID")
+        print("8. 使用帮助")
+        print("9. 退出")
 
     def run(self):
         """Main menu loop."""
@@ -149,8 +152,10 @@ class CliUI:
                 elif choice == 6:
                     self._set_settings()
                 elif choice == 7:
-                    self._help()
+                    self._lookup_uid()
                 elif choice == 8:
+                    self._help()
+                elif choice == 9:
                     self._exit()
                 else:
                     print_error("输入错误，请重新输入")
@@ -694,6 +699,40 @@ class CliUI:
             print_success("设置已更新")
         except Exception as e:
             print_error(str(e))
+
+    # --- UID 查询 ---
+
+    def _lookup_uid(self):
+        """查询他人 UID"""
+        print("\n--- 查询 UID ---")
+        print("已有记录:")
+        records = self.uid_store.get_all()
+        if records:
+            for sid, info in records.items():
+                print(f"  学号: {sid}  UID: {info.get('uid', '')}  姓名: {info.get('name', '')}")
+        else:
+            print("  暂无记录")
+
+        print("\n输入学号和密码查询新的 UID（留空学号返回菜单）")
+        username = input("学号: ").strip()
+        if not username:
+            return
+        password = pwinput("密码: ").strip()
+        if not password:
+            print_error("密码不能为空")
+            return
+
+        print_info("正在查询，请稍候...")
+        success, uid, name = lookup_uid(username, password)
+        if success:
+            self.uid_store.set(username, uid, name)
+            print_success(f"查询成功！")
+            print_info(f"学号: {username}")
+            print_info(f"UID:  {uid}")
+            print_info(f"姓名: {name}")
+            print_info("已保存到本地记录，下次可直接查看")
+        else:
+            print_error(f"查询失败: {name}")
 
     # --- Help ---
 
