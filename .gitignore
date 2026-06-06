@@ -142,6 +142,7 @@ logs/
 # build artifacts
 dist/
 *.spec
+SeatHunter.app/
 
 # example
 examples
