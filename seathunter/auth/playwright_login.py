@@ -193,21 +193,26 @@ def playwright_login(username: str, password: str, library_url: str,
             all_cookies = await context.cookies()
             lib_cookies = [c for c in all_cookies if "huitu.zhishulib.com" in c.get("domain", "")]
 
-            # Get user info
+            # Get user info (retry up to 3 times)
             logger.info("Fetching user info...")
             uid = ""
             name = ""
-            try:
-                resp_text = await page.evaluate("""async () => {
-                    const resp = await fetch("/Seat/Index/searchSeats?space_category[category_id]=591&space_category[content_id]=3&LAB_JSON=1");
-                    return await resp.text();
-                }""")
-                data = json.loads(resp_text)
-                if isinstance(data, dict) and data.get("data"):
-                    uid = str(data["data"].get("uid", ""))
-                    name = data["data"].get("uname", "")
-            except Exception as e:
-                logger.warning("Failed to get user info from browser: %s", e)
+            for attempt in range(3):
+                try:
+                    resp_text = await page.evaluate("""async () => {
+                        const resp = await fetch("/Seat/Index/searchSeats?space_category[category_id]=591&space_category[content_id]=3&LAB_JSON=1");
+                        return await resp.text();
+                    }""")
+                    data = json.loads(resp_text)
+                    if isinstance(data, dict) and data.get("data"):
+                        uid = str(data["data"].get("uid", ""))
+                        name = data["data"].get("uname", "")
+                    if uid:
+                        break
+                except Exception as e:
+                    logger.warning("获取用户信息失败 (第%d次): %s", attempt + 1, e)
+                if attempt < 2:
+                    await asyncio.sleep(2)
 
             if not uid:
                 for c in lib_cookies:

@@ -181,6 +181,8 @@ def lookup_uid(username: str, password: str, base_url: str = "https://hdu.huitu.
         library_url=base_url + "/",
         base_url=base_url,
     )
-    if success:
+    if success and uid:
         return (True, uid, name)
+    if success and not uid:
+        return (False, "", "登录成功但未获取到UID，请重试")
     return (False, "", err_msg)
