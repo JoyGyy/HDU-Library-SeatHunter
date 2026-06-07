@@ -1395,36 +1395,22 @@ class GuiApp:
         self.user_info_labels["name"].config(text=name or "—")
 
     def _update_status_display(self):
-        if not self.status_labels:
+        """更新调度引擎状态显示"""
+        if not hasattr(self, 'status_labels'):
             return
-        try:
-            if self.engine.is_running:
-                self.status_labels["engine"].config(text="● 运行中", foreground="green")
-                status = self.engine.get_status()
-                trigger = status.get("trigger_time")
-                remaining = status.get("remaining_seconds")
-                plan_ids = status.get("plan_ids", [])
-
-                if trigger:
-                    self.status_labels["trigger"].config(
-                        text=trigger.strftime("%Y-%m-%d %H:%M:%S"),
-                    )
-                else:
-                    self.status_labels["trigger"].config(text="等待中...")
-
-                if remaining is not None:
-                    self.status_labels["remaining"].config(text=format_countdown(remaining))
-                else:
-                    self.status_labels["remaining"].config(text="—")
-
-                self.status_labels["plans"].config(text=", ".join(plan_ids) if plan_ids else "—")
-            else:
-                self.status_labels["engine"].config(text="● 未运行", foreground="red")
-                self.status_labels["trigger"].config(text="—")
-                self.status_labels["remaining"].config(text="—")
-                self.status_labels["plans"].config(text="—")
-        except tk.TclError:
-            pass  # Widget already destroyed
+        status = self.engine.get_status()
+        if status["running"]:
+            self.status_labels["engine"].config(text="运行中", foreground="green")
+            if status["trigger_time"]:
+                self.status_labels["trigger"].config(text=status["trigger_time"].strftime("%m-%d %H:%M"))
+            if status["remaining_seconds"] is not None:
+                self.status_labels["remaining"].config(text=format_countdown(status["remaining_seconds"]))
+            self.status_labels["plans"].config(text=", ".join(status["plan_ids"]))
+        else:
+            self.status_labels["engine"].config(text="未运行", foreground="red")
+            self.status_labels["trigger"].config(text="—")
+            self.status_labels["remaining"].config(text="—")
+            self.status_labels["plans"].config(text="—")
 
     def _schedule_status_refresh(self):
         """Periodically refresh status display while engine runs."""
@@ -1505,10 +1491,14 @@ class GuiApp:
     def _update_countdown_display(self, remaining, trigger_time, plan_desc):
         remaining_str = format_countdown(remaining)
         trigger_str = trigger_time.strftime("%m-%d %H:%M")
-        self.status_bar.config(
-            text=f"调度运行中 | 下次触发: {trigger_str} | "
-                 f"剩余: {remaining_str} | 方案: {plan_desc}",
-        )
+        # 更新调度 tab 的状态区
+        if hasattr(self, 'status_labels'):
+            self.status_labels["engine"].config(text="运行中", foreground="green")
+            self.status_labels["trigger"].config(text=trigger_str)
+            self.status_labels["remaining"].config(text=remaining_str)
+            self.status_labels["plans"].config(text=plan_desc)
+        # 状态栏只显示简要信息
+        self.status_bar.config(text=f"调度运行中 | 剩余: {remaining_str}")
 
     def _on_booking_result(self, result: BookingResult):
         self.history.log(result)
