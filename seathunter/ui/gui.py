@@ -122,7 +122,7 @@ class GuiApp:
         idx = self.notebook.index(self.notebook.select())
         if idx == 0:
             self._refresh_plans_tree()
-        elif idx == 2:
+        elif idx == 1:
             self._update_status_display()
 
     # ─── Tab 0: 预约 ─────────────────────────────────────────
@@ -178,8 +178,7 @@ class GuiApp:
         self.booking_stop_btn = ttk.Button(ctrl_frame, text="停止", command=self._cancel_booking, state=tk.DISABLED)
         self.booking_stop_btn.pack(side=tk.RIGHT, padx=2)
 
-        self._checkin_btn = ttk.Button(ctrl_frame, text="手动签到", command=self._manual_checkin)
-        self._checkin_btn.pack(side=tk.LEFT, padx=5)
+
 
         log_frame = ttk.LabelFrame(book_frame, text="结果日志", padding=3)
         log_frame.pack(fill=tk.BOTH, expand=True)
@@ -204,52 +203,36 @@ class GuiApp:
     # ─── Tab 3: Scheduler ───────────────────────────────────────
 
     def _build_scheduler_tab(self):
+        """Tab 1: 调度 — 合并调度管理和签到"""
         frame = ttk.Frame(self.notebook, padding=5)
-        self.notebook.add(frame, text="调度管理")
+        self.notebook.add(frame, text="调度")
 
-        # Top buttons
-        btn_frame = ttk.Frame(frame)
-        btn_frame.pack(fill=tk.X, pady=(0, 5))
+        # ── 上半部分：调度管理 ──
+        sched_frame = ttk.LabelFrame(frame, text="调度引擎", padding=3)
+        sched_frame.pack(fill=tk.BOTH, expand=True)
 
-        self.scheduler_start_btn = ttk.Button(
-            btn_frame, text="启动调度", command=self._start_scheduler,
-        )
+        btn_frame = ttk.Frame(sched_frame)
+        btn_frame.pack(fill=tk.X, pady=(0, 3))
+
+        self.scheduler_start_btn = ttk.Button(btn_frame, text="启动调度", command=self._start_scheduler)
         self.scheduler_start_btn.pack(side=tk.LEFT, padx=2)
-        self.scheduler_stop_btn = ttk.Button(
-            btn_frame, text="停止调度", command=self._stop_scheduler,
-        )
+        self.scheduler_stop_btn = ttk.Button(btn_frame, text="停止调度", command=self._stop_scheduler)
         self.scheduler_stop_btn.pack(side=tk.LEFT, padx=2)
 
-        ttk.Separator(btn_frame, orient=tk.VERTICAL).pack(
-            side=tk.LEFT, fill=tk.Y, padx=8,
-        )
-        ttk.Button(
-            btn_frame, text="添加按星期调度", command=self._add_weekday_schedule_dialog,
-        ).pack(side=tk.LEFT, padx=2)
-        ttk.Button(
-            btn_frame, text="添加按日期调度", command=self._add_date_schedule_dialog,
-        ).pack(side=tk.LEFT, padx=2)
-        ttk.Button(
-            btn_frame, text="切换启用", command=self._toggle_schedule_enabled,
-        ).pack(side=tk.LEFT, padx=2)
-        ttk.Button(
-            btn_frame, text="删除选中", command=self._delete_selected_schedules,
-        ).pack(side=tk.LEFT, padx=2)
+        ttk.Separator(btn_frame, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=8)
+        ttk.Button(btn_frame, text="添加按星期调度", command=self._add_weekday_schedule_dialog).pack(side=tk.LEFT, padx=2)
+        ttk.Button(btn_frame, text="添加按日期调度", command=self._add_date_schedule_dialog).pack(side=tk.LEFT, padx=2)
+        ttk.Button(btn_frame, text="切换启用", command=self._toggle_schedule_enabled).pack(side=tk.LEFT, padx=2)
+        ttk.Button(btn_frame, text="删除选中", command=self._delete_selected_schedules).pack(side=tk.LEFT, padx=2)
 
-        # Engine running status indicator
-        self.scheduler_status_label = tk.Label(
-            btn_frame, text="● 调度未运行", fg="red", font=("", 10),
-        )
+        self.scheduler_status_label = tk.Label(btn_frame, text="● 调度未运行", fg="red", font=("", 10))
         self.scheduler_status_label.pack(side=tk.RIGHT, padx=10)
 
-        # Schedule tree
-        tree_frame = ttk.Frame(frame)
+        tree_frame = ttk.Frame(sched_frame)
         tree_frame.pack(fill=tk.BOTH, expand=True)
 
         cols = ("idx", "type", "target", "status", "plans")
-        self.schedules_tree = ttk.Treeview(
-            tree_frame, columns=cols, show="headings", height=15,
-        )
+        self.schedules_tree = ttk.Treeview(tree_frame, columns=cols, show="headings", height=8)
         for col, text, w in [
             ("idx", "序号", 50), ("type", "类型", 80),
             ("target", "目标", 200), ("status", "状态", 60),
@@ -266,7 +249,35 @@ class GuiApp:
         self.schedules_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         sb.pack(side=tk.RIGHT, fill=tk.Y)
 
+        # ── 下半部分：引擎状态 + 签到 ──
+        bottom_frame = ttk.Frame(frame)
+        bottom_frame.pack(fill=tk.X, pady=(5, 0))
+
+        status_frame = ttk.LabelFrame(bottom_frame, text="引擎状态", padding=5)
+        status_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        self.status_labels = {}
+        for i, (key, label_text) in enumerate([
+            ("engine", "引擎"),
+            ("trigger", "下次触发"),
+            ("remaining", "剩余时间"),
+            ("plans", "目标方案"),
+        ]):
+            ttk.Label(status_frame, text=f"{label_text}:", font=("", 9, "bold")).grid(row=i, column=0, sticky=tk.W, pady=2)
+            lbl = ttk.Label(status_frame, text="—", font=("", 9))
+            lbl.grid(row=i, column=1, sticky=tk.W, padx=(10, 0), pady=2)
+            self.status_labels[key] = lbl
+
+        checkin_frame = ttk.LabelFrame(bottom_frame, text="手动签到", padding=5)
+        checkin_frame.pack(side=tk.RIGHT, fill=tk.Y, padx=(10, 0))
+
+        ttk.Label(checkin_frame, text="bookingId:").pack(anchor=tk.W)
+        self._checkin_entry = ttk.Entry(checkin_frame, width=20)
+        self._checkin_entry.pack(fill=tk.X, pady=2)
+        ttk.Button(checkin_frame, text="签到", command=self._manual_checkin_from_entry).pack(fill=tk.X)
+
         self._refresh_schedules_tree()
+        self._update_status_display()
 
     # ─── Tab 4: Status ──────────────────────────────────────────
 
@@ -307,25 +318,6 @@ class GuiApp:
         self.uid_tree.pack(fill=tk.BOTH, expand=True)
 
         self._refresh_uid_tree()
-
-        info_frame = ttk.LabelFrame(frame, text="调度引擎状态", padding=15)
-        info_frame.pack(fill=tk.X)
-
-        self.status_labels = {}
-        for i, (key, label_text) in enumerate([
-            ("engine", "引擎"),
-            ("trigger", "下次触发"),
-            ("remaining", "剩余时间"),
-            ("plans", "目标方案"),
-        ]):
-            ttk.Label(info_frame, text=f"{label_text}:", font=("", 10, "bold")).grid(
-                row=i, column=0, sticky=tk.W, pady=4,
-            )
-            lbl = ttk.Label(info_frame, text="—", font=("", 10))
-            lbl.grid(row=i, column=1, sticky=tk.W, padx=(15, 0), pady=4)
-            self.status_labels[key] = lbl
-
-        self._update_status_display()
 
     # ─── Tab 5: Settings ────────────────────────────────────────
 
@@ -1464,40 +1456,25 @@ class GuiApp:
         else:
             self._log(f"自动签到失败: {plan_desc} - {message}", "error")
 
-    def _manual_checkin(self):
-        """手动签到"""
+    def _manual_checkin_from_entry(self):
+        """从输入框获取 bookingId 并签到"""
         if not self.session_mgr.is_logged_in:
             messagebox.showwarning("提示", "请先登录")
             return
 
-        # 弹出输入框
-        dialog = tk.Toplevel(self.root)
-        dialog.title("手动签到")
-        dialog.geometry("400x150")
-        dialog.resizable(False, False)
-        dialog.transient(self.root)
-        dialog.grab_set()
+        booking_id = self._checkin_entry.get().strip()
+        if not booking_id:
+            messagebox.showwarning("提示", "请输入 bookingId")
+            return
 
-        ttk.Label(dialog, text="请输入 bookingId:").pack(pady=10)
-        entry = ttk.Entry(dialog, width=40)
-        entry.pack(pady=5)
-
-        def do_checkin():
-            booking_id = entry.get().strip()
-            if not booking_id:
-                messagebox.showwarning("提示", "bookingId 不能为空", parent=dialog)
-                return
-            dialog.destroy()
-            self._log(f"正在签到 (bookingId={booking_id})...", "info")
-            success, msg, _ = self.session_mgr.api_client.check_in(booking_id)
-            if success:
-                self._log("签到成功！", "success")
-                messagebox.showinfo("成功", "签到成功！")
-            else:
-                self._log(f"签到失败: {msg}", "error")
-                messagebox.showerror("失败", f"签到失败: {msg}")
-
-        ttk.Button(dialog, text="签到", command=do_checkin).pack(pady=10)
+        self._log(f"正在签到 (bookingId={booking_id})...", "info")
+        success, msg, _ = self.session_mgr.api_client.check_in(booking_id)
+        if success:
+            self._log("签到成功！", "success")
+            messagebox.showinfo("成功", "签到成功！")
+        else:
+            self._log(f"签到失败: {msg}", "error")
+            messagebox.showerror("失败", f"签到失败: {msg}")
 
     # ================================================================
     # Utilities
