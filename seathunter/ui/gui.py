@@ -110,48 +110,38 @@ class GuiApp:
         self.notebook = ttk.Notebook(self.root)
         self.notebook.pack(fill=tk.BOTH, expand=True, padx=5, pady=(5, 0))
 
-        self._build_plans_tab()
-        self._build_booking_tab()
-        self._build_scheduler_tab()
-        self._build_status_tab()
-        self._build_settings_tab()
-        self._build_help_tab()
+        self._build_booking_tab()      # Tab 0: 预约
+        self._build_scheduler_tab()    # Tab 1: 调度
+        self._build_status_tab()       # Tab 2: 工具（后面重命名为 _build_tools_tab）
+        self._build_settings_tab()     # Tab 3: 设置
+        self._build_help_tab()         # Tab 4: 帮助
 
         self.notebook.bind("<<NotebookTabChanged>>", self._on_tab_changed)
 
     def _on_tab_changed(self, event=None):
         idx = self.notebook.index(self.notebook.select())
-        if idx == 1:
-            self._refresh_booking_plans_tree()
-        elif idx == 3:
+        if idx == 0:
+            self._refresh_plans_tree()
+        elif idx == 2:
             self._update_status_display()
 
-    # ─── Tab 1: Plans ───────────────────────────────────────────
+    # ─── Tab 0: 预约 ─────────────────────────────────────────
 
-    def _build_plans_tab(self):
+    def _build_booking_tab(self):
+        """Tab 0: 预约 — 合并方案管理和立即抢座"""
         frame = ttk.Frame(self.notebook, padding=5)
-        self.notebook.add(frame, text="方案管理")
+        self.notebook.add(frame, text="预约")
 
-        # Buttons at bottom
-        btn_frame = ttk.Frame(frame)
-        btn_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=(5, 0))
-        ttk.Button(btn_frame, text="添加方案", command=self._add_plan_dialog).pack(
-            side=tk.LEFT, padx=2,
-        )
-        ttk.Button(btn_frame, text="删除选中", command=self._delete_selected_plans).pack(
-            side=tk.LEFT, padx=2,
-        )
-        ttk.Button(
-            btn_frame, text="批量修改时间", command=self._batch_change_time_dialog,
-        ).pack(side=tk.LEFT, padx=2)
+        # ── 上半部分：方案管理 ──
+        plans_frame = ttk.LabelFrame(frame, text="方案管理", padding=3)
+        plans_frame.pack(fill=tk.BOTH, expand=True)
 
-        # Treeview fills remaining space
-        tree_frame = ttk.Frame(frame)
+        tree_frame = ttk.Frame(plans_frame)
         tree_frame.pack(fill=tk.BOTH, expand=True)
 
         columns = ("idx", "plan_id", "room", "floor", "seats", "time", "duration")
         self.plans_tree = ttk.Treeview(
-            tree_frame, columns=columns, show="headings", height=18,
+            tree_frame, columns=columns, show="headings", height=12,
         )
         for col, text, width in [
             ("idx", "序号", 50), ("plan_id", "方案ID", 130),
@@ -167,68 +157,49 @@ class GuiApp:
         self.plans_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
-        self._refresh_plans_tree()
+        btn_frame = ttk.Frame(plans_frame)
+        btn_frame.pack(fill=tk.X, pady=(3, 0))
+        ttk.Button(btn_frame, text="添加方案", command=self._add_plan_dialog).pack(side=tk.LEFT, padx=2)
+        ttk.Button(btn_frame, text="删除选中", command=self._delete_selected_plans).pack(side=tk.LEFT, padx=2)
+        ttk.Button(btn_frame, text="批量修改时间", command=self._batch_change_time_dialog).pack(side=tk.LEFT, padx=2)
 
-    # ─── Tab 2: Booking ─────────────────────────────────────────
+        # ── 下半部分：立即抢座 ──
+        book_frame = ttk.LabelFrame(frame, text="立即抢座", padding=3)
+        book_frame.pack(fill=tk.X, pady=(5, 0))
 
-    def _build_booking_tab(self):
-        frame = ttk.Frame(self.notebook, padding=5)
-        self.notebook.add(frame, text="立即抢座")
-
-        # Top: plan tree (read-only)
-        tree_frame = ttk.LabelFrame(frame, text="当前方案", padding=3)
-        tree_frame.pack(fill=tk.X, pady=(0, 5))
-
-        cols = ("plan_id", "room", "floor", "seats", "time", "duration")
-        self.booking_tree = ttk.Treeview(
-            tree_frame, columns=cols, show="headings", height=4,
-        )
-        for col, text, w in [
-            ("plan_id", "方案ID", 120), ("room", "房间名", 120),
-            ("floor", "楼层", 80), ("seats", "座位号", 100),
-            ("time", "开始时间", 100), ("duration", "时长", 60),
-        ]:
-            self.booking_tree.heading(col, text=text)
-            self.booking_tree.column(col, width=w, anchor=tk.CENTER if col in ("time", "duration") else tk.W)
-
-        self.booking_tree.pack(fill=tk.X)
-
-        # Progress and buttons
-        ctrl_frame = ttk.Frame(frame)
-        ctrl_frame.pack(fill=tk.X, pady=5)
+        ctrl_frame = ttk.Frame(book_frame)
+        ctrl_frame.pack(fill=tk.X, pady=3)
 
         self.booking_progress_label = ttk.Label(ctrl_frame, text="")
         self.booking_progress_label.pack(side=tk.LEFT, padx=5)
 
-        self.booking_start_btn = ttk.Button(
-            ctrl_frame, text="开始抢座", command=self._start_booking,
-        )
+        self.booking_start_btn = ttk.Button(ctrl_frame, text="开始抢座", command=self._start_booking)
         self.booking_start_btn.pack(side=tk.RIGHT, padx=2)
-        self.booking_stop_btn = ttk.Button(
-            ctrl_frame, text="停止", command=self._cancel_booking, state=tk.DISABLED,
-        )
+        self.booking_stop_btn = ttk.Button(ctrl_frame, text="停止", command=self._cancel_booking, state=tk.DISABLED)
         self.booking_stop_btn.pack(side=tk.RIGHT, padx=2)
 
         self._checkin_btn = ttk.Button(ctrl_frame, text="手动签到", command=self._manual_checkin)
         self._checkin_btn.pack(side=tk.LEFT, padx=5)
 
-        # Log area
-        log_frame = ttk.LabelFrame(frame, text="结果日志", padding=3)
+        log_frame = ttk.LabelFrame(book_frame, text="结果日志", padding=3)
         log_frame.pack(fill=tk.BOTH, expand=True)
 
-        self.booking_log = tk.Text(
-            log_frame, state=tk.DISABLED, wrap=tk.WORD, height=10,
-            font=("Consolas", 9),
-        )
+        self.booking_log = tk.Text(log_frame, state=tk.DISABLED, wrap=tk.WORD, height=8, font=("Consolas", 9))
         self.booking_log.tag_configure("success", foreground="green")
         self.booking_log.tag_configure("error", foreground="red")
         self.booking_log.tag_configure("info", foreground="#0066cc")
         self.booking_log.tag_configure("warning", foreground="#cc6600")
 
+        log_btn_frame = ttk.Frame(log_frame)
+        log_btn_frame.pack(fill=tk.X, pady=(2, 0))
+        ttk.Button(log_btn_frame, text="清空日志", command=self._clear_booking_log).pack(side=tk.RIGHT)
+
         log_scroll = ttk.Scrollbar(log_frame, orient=tk.VERTICAL, command=self.booking_log.yview)
         self.booking_log.configure(yscrollcommand=log_scroll.set)
         self.booking_log.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         log_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+
+        self._refresh_plans_tree()
 
     # ─── Tab 3: Scheduler ───────────────────────────────────────
 
@@ -872,19 +843,11 @@ class GuiApp:
     # Booking
     # ================================================================
 
-    def _refresh_booking_plans_tree(self):
-        for item in self.booking_tree.get_children():
-            self.booking_tree.delete(item)
-        plans = self.config.get_plans()
-        for plan in plans:
-            seats_str = ",".join(
-                f"{s.seat_num}({s.booker_uid})" if s.booker_uid else s.seat_num
-                for s in plan.seats
-            )
-            self.booking_tree.insert("", tk.END, values=(
-                plan.id, plan.room_name, plan.floor_name,
-                seats_str, plan.begin_time, f"{plan.duration_hours}小时",
-            ))
+    def _clear_booking_log(self):
+        """清空预约日志"""
+        self.booking_log.configure(state=tk.NORMAL)
+        self.booking_log.delete("1.0", tk.END)
+        self.booking_log.configure(state=tk.DISABLED)
 
     def _start_booking(self):
         if not self._logged_in:
