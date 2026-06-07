@@ -1628,13 +1628,19 @@ class GuiApp:
 
         self._checkin_result_label.config(text="签到中...", foreground="gray")
         self._log(f"正在签到 (bookingId={booking_id})...", "info")
-        success, msg, _ = self.session_mgr.api_client.check_in(booking_id)
-        if success:
-            self._log("签到成功！", "success")
-            self._checkin_result_label.config(text="✅ 签到成功！", foreground="green")
-        else:
-            self._log(f"签到失败: {msg}", "error")
-            self._checkin_result_label.config(text=f"❌ 签到失败: {msg}", foreground="red")
+
+        def _do():
+            success, msg, _ = self.session_mgr.api_client.check_in(booking_id)
+            if success:
+                self._log("签到成功！", "success")
+                self.root.after(0, lambda: self._checkin_result_label.config(
+                    text="✅ 签到成功！", foreground="green"))
+            else:
+                self._log(f"签到失败: {msg}", "error")
+                self.root.after(0, lambda: self._checkin_result_label.config(
+                    text=f"❌ 签到失败: {msg}", foreground="red"))
+
+        threading.Thread(target=_do, daemon=True).start()
 
     # ================================================================
     # Utilities
