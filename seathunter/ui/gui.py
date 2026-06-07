@@ -351,30 +351,45 @@ class GuiApp:
     # ─── Tab 5: Settings ────────────────────────────────────────
 
     def _build_settings_tab(self):
+        """Tab 3: 设置"""
         frame = ttk.Frame(self.notebook, padding=20)
         self.notebook.add(frame, text="设置")
 
+        # 账号信息
+        account_frame = ttk.LabelFrame(frame, text="账号信息", padding=15)
+        account_frame.pack(fill=tk.X, pady=(0, 10))
+
+        self.account_labels = {}
+        for i, (key, label_text) in enumerate([
+            ("login_name", "学号"),
+            ("name", "姓名"),
+        ]):
+            ttk.Label(account_frame, text=f"{label_text}:", font=("", 10, "bold")).grid(row=i, column=0, sticky=tk.W, pady=4)
+            lbl = ttk.Label(account_frame, text="—", font=("", 10))
+            lbl.grid(row=i, column=1, sticky=tk.W, padx=(15, 0), pady=4)
+            self.account_labels[key] = lbl
+
+        ttk.Button(account_frame, text="重新登录", command=self._relogin).grid(row=2, column=0, columnspan=2, pady=(8, 0))
+
+        # 请求设置
         s_frame = ttk.LabelFrame(frame, text="请求设置", padding=15)
         s_frame.pack(fill=tk.X)
 
         ttk.Label(s_frame, text="重试间隔（秒）:").grid(row=0, column=0, sticky=tk.W, pady=8)
         self.interval_var = tk.StringVar()
-        self.interval_entry = ttk.Spinbox(
-            s_frame, from_=1, to=300, textvariable=self.interval_var, width=10,
-        )
+        self.interval_entry = ttk.Spinbox(s_frame, from_=1, to=300, textvariable=self.interval_var, width=10)
         self.interval_entry.grid(row=0, column=1, padx=10, pady=8)
         ttk.Label(s_frame, text="建议不小于5").grid(row=0, column=2, sticky=tk.W)
 
         ttk.Label(s_frame, text="最大重试次数:").grid(row=1, column=0, sticky=tk.W, pady=8)
         self.max_try_var = tk.StringVar()
-        self.max_try_entry = ttk.Spinbox(
-            s_frame, from_=1, to=999, textvariable=self.max_try_var, width=10,
-        )
+        self.max_try_entry = ttk.Spinbox(s_frame, from_=1, to=999, textvariable=self.max_try_var, width=10)
         self.max_try_entry.grid(row=1, column=1, padx=10, pady=8)
 
         ttk.Button(frame, text="保存设置", command=self._save_settings).pack(pady=20)
 
         self._load_settings()
+        self._update_account_display()
 
     # ─── Tab 6: Help ────────────────────────────────────────────
 
@@ -477,6 +492,7 @@ class GuiApp:
             if dlg and dlg.winfo_exists():
                 dlg.destroy()
             # 更新用户信息显示
+            self._update_account_display()
             self._update_user_info()
             # Start room data refresh
             self.room_cache.on_ready(self._on_rooms_ready)
@@ -1447,6 +1463,16 @@ class GuiApp:
         self.runner.interval = interval
         self.runner.max_try_times = max_try
         messagebox.showinfo("成功", "设置已保存")
+
+    def _update_account_display(self):
+        """更新账号信息显示"""
+        user = self.config.get_user_info()
+        self.account_labels["login_name"].config(text=user.get("login_name", "—"))
+        self.account_labels["name"].config(text=self.session_mgr.name or "—")
+
+    def _relogin(self):
+        """重新登录"""
+        self._show_login_dialog()
 
     # ================================================================
     # Help
