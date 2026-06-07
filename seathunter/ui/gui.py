@@ -131,6 +131,97 @@ class GuiApp:
         if idx == 1:
             self._refresh_plans_tree()
 
+    # ─── 好友业务逻辑 ──────────────────────────────────────────
+
+    def _refresh_friends_tree(self):
+        """刷新好友列表 Treeview"""
+        for item in self.friends_tree.get_children():
+            self.friends_tree.delete(item)
+        friends = self.friend_store.get_all()
+        for sid, info in friends.items():
+            self.friends_tree.insert("", tk.END, values=(
+                sid, info.get("name", ""), info.get("uid", ""),
+            ))
+
+    def _add_friend(self):
+        """添加好友：用 lookup_uid 查询，成功后存入 friend_store"""
+        sid = self._friend_sid_entry.get().strip()
+        pwd = self._friend_pwd_entry.get().strip()
+        if not sid or not pwd:
+            messagebox.showwarning("提示", "请输入学号和密码")
+            return
+
+        self._add_friend_btn.config(state=tk.DISABLED)
+        self.status_bar.config(text="正在查询好友信息...")
+
+        def worker():
+            success, uid, name = lookup_uid(
+                username=sid, password=pwd,
+                base_url=self.session_mgr.base_url,
+            )
+            self.root.after(0, self._on_friend_lookup_done, success, uid, name, sid, pwd)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_friend_lookup_done(self, success, uid, name, sid, pwd):
+        """lookup_uid 完成后的回调"""
+        self._add_friend_btn.config(state=tk.NORMAL)
+        if success:
+            self.friend_store.add(sid, uid, name, pwd)
+            self._on_friend_added(sid, name, uid)
+        else:
+            err = name  # 失败时 name 参数存放错误信息
+            self.status_bar.config(text="好友查询失败")
+            messagebox.showerror("添加失败", f"查询失败: {err}")
+
+    def _on_friend_added(self, sid, name, uid):
+        """添加成功后的 UI 更新"""
+        self.status_bar.config(text=f"好友 {name} 添加成功")
+        messagebox.showinfo("成功", f"好友添加成功\n学号: {sid}\n姓名: {name}\nUID: {uid}")
+        self._refresh_friends_tree()
+        self._friend_sid_entry.delete(0, tk.END)
+        self._friend_pwd_entry.delete(0, tk.END)
+
+    def _delete_selected_friend(self):
+        """删除选中的好友"""
+        selected = self.friends_tree.selection()
+        if not selected:
+            messagebox.showinfo("提示", "请先选择要删除的好友")
+            return
+        sids = [self.friends_tree.item(item, "values")[0] for item in selected]
+        if not messagebox.askyesno("确认", f"确定要删除 {len(sids)} 个好友吗？"):
+            return
+        for sid in sids:
+            self.friend_store.remove(sid)
+        self._refresh_friends_tree()
+
+    def _test_friend_login(self):
+        """测试选中好友的登录"""
+        selected = self.friends_tree.selection()
+        if not selected:
+            messagebox.showinfo("提示", "请先选择要测试的好友")
+            return
+        if len(selected) > 1:
+            messagebox.showinfo("提示", "请只选择一个好友进行测试")
+            return
+        sid = self.friends_tree.item(selected[0], "values")[0]
+        self.status_bar.config(text=f"正在测试好友 {sid} 的登录...")
+
+        def worker():
+            ok, msg = self.friend_service.test_login(sid)
+            self.root.after(0, self._on_friend_test_done, ok, msg, sid)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_friend_test_done(self, success, msg, sid):
+        """测试登录完成后的回调"""
+        if success:
+            self.status_bar.config(text=f"好友 {sid} 登录测试成功")
+            messagebox.showinfo("测试结果", msg)
+        else:
+            self.status_bar.config(text=f"好友 {sid} 登录测试失败")
+            messagebox.showerror("测试结果", msg)
+
     # ─── Tab 0: 预约 ─────────────────────────────────────────
 
     def _build_booking_tab(self):
@@ -290,13 +381,58 @@ class GuiApp:
         self.notebook.add(frame, text="首页")
         ttk.Label(frame, text="首页（待实现）", font=("", 12)).pack(pady=20)
 
-    # ─── Tab 2: 好友（占位）──────────────────────────────────────
+    # ─── Tab 2: 好友 ────────────────────────────────────────────
 
     def _build_friends_tab(self):
-        """Tab 2: 好友 — 占位，后续 Task 5 实现"""
+        """Tab 2: 好友管理 — 好友列表 + 添加好友"""
         frame = ttk.Frame(self.notebook, padding=5)
         self.notebook.add(frame, text="好友")
-        ttk.Label(frame, text="好友管理（待实现）", font=("", 12)).pack(pady=20)
+
+        # ── 上半部分：好友列表 ──
+        list_frame = ttk.LabelFrame(frame, text="好友列表", padding=3)
+        list_frame.pack(fill=tk.BOTH, expand=True)
+
+        tree_frame = ttk.Frame(list_frame)
+        tree_frame.pack(fill=tk.BOTH, expand=True)
+
+        columns = ("student_id", "name", "uid")
+        self.friends_tree = ttk.Treeview(
+            tree_frame, columns=columns, show="headings", height=6,
+        )
+        for col, text, width in [
+            ("student_id", "学号", 150),
+            ("name", "姓名", 120),
+            ("uid", "UID", 200),
+        ]:
+            self.friends_tree.heading(col, text=text)
+            self.friends_tree.column(col, width=width, anchor=tk.W)
+
+        scrollbar = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=self.friends_tree.yview)
+        self.friends_tree.configure(yscrollcommand=scrollbar.set)
+        self.friends_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        btn_frame = ttk.Frame(list_frame)
+        btn_frame.pack(fill=tk.X, pady=(3, 0))
+        ttk.Button(btn_frame, text="删除选中", command=self._delete_selected_friend).pack(side=tk.LEFT, padx=2)
+        ttk.Button(btn_frame, text="测试登录", command=self._test_friend_login).pack(side=tk.LEFT, padx=2)
+
+        # ── 下半部分：添加好友 ──
+        add_frame = ttk.LabelFrame(frame, text="添加好友", padding=5)
+        add_frame.pack(fill=tk.X, pady=(5, 0))
+
+        ttk.Label(add_frame, text="学号:").grid(row=0, column=0, sticky=tk.W, pady=4)
+        self._friend_sid_entry = ttk.Entry(add_frame, width=25)
+        self._friend_sid_entry.grid(row=0, column=1, padx=5, pady=4)
+
+        ttk.Label(add_frame, text="密码:").grid(row=0, column=2, sticky=tk.W, pady=4, padx=(10, 0))
+        self._friend_pwd_entry = ttk.Entry(add_frame, width=25, show="*")
+        self._friend_pwd_entry.grid(row=0, column=3, padx=5, pady=4)
+
+        self._add_friend_btn = ttk.Button(add_frame, text="查询并添加", command=self._add_friend)
+        self._add_friend_btn.grid(row=0, column=4, padx=5, pady=4)
+
+        self._refresh_friends_tree()
 
     # ─── Tab 3: 设置 ────────────────────────────────────────────
 
