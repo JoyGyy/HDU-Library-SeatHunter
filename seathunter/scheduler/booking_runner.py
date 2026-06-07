@@ -30,10 +30,18 @@ class BookingRunner:
         self.interval = interval
         self.max_try_times = max_try_times
         self._cancelled = False
+        self._checkin_registry = None  # 新增：签到注册回调
 
     def cancel(self):
         """Cancel the current booking run."""
         self._cancelled = True
+
+    def set_checkin_registry(self, callback):
+        """设置签到注册回调
+
+        callback(booking_id, begin_time, target_date, plan_desc)
+        """
+        self._checkin_registry = callback
 
     def run_booking(self, plans: List[Plan], target_date: datetime,
                     on_result: Optional[Callable[[BookingResult], None]] = None,
@@ -97,6 +105,20 @@ class BookingRunner:
 
                 if result.success:
                     logger.info("Booking successful: %s - %s", plan.id, plan.room_name)
+                    # 保存 bookingId 到 plan
+                    if result.booking_id:
+                        plan.booking_id = result.booking_id
+                        logger.info("已保存 bookingId: %s", result.booking_id)
+                        # 注册签到任务
+                        if self._checkin_registry:
+                            plan_desc = f"{plan.room_name}-{','.join(s.seat_num for s in plan.seats)}"
+                            target_date_str = plan_date.strftime("%Y-%m-%d")
+                            self._checkin_registry(
+                                result.booking_id,
+                                plan.begin_time,
+                                target_date_str,
+                                plan_desc,
+                            )
                     return results
 
                 logger.warning("Plan %s failed: %s", plan.id, result.message)
