@@ -43,6 +43,10 @@ class BookingRunner:
         """
         self._checkin_registry = callback
 
+    def set_friend_confirm_registry(self, callback):
+        """设置好友确认回调。callback(booking_id: str, friend_uid: str)"""
+        self._friend_confirm_registry = callback
+
     def run_booking(self, plans: List[Plan], target_date: datetime,
                     on_result: Optional[Callable[[BookingResult], None]] = None,
                     on_attempt: Optional[Callable[[int, int], None]] = None) -> List[BookingResult]:
@@ -109,6 +113,12 @@ class BookingRunner:
                     if result.booking_id:
                         plan.booking_id = result.booking_id
                         logger.info("已保存 bookingId: %s", result.booking_id)
+                        # 预约成功后，如果有好友代预约，触发自动同意
+                        if hasattr(self, '_friend_confirm_registry') and self._friend_confirm_registry:
+                            for seat in plan.seats:
+                                if seat.booker_uid and seat.booker_uid != self.session_mgr.uid:
+                                    self._friend_confirm_registry(result.booking_id, seat.booker_uid)
+                                    break  # 只需要确认一次（同一个 bookingId）
                         # 注册签到任务
                         if self._checkin_registry:
                             plan_desc = f"{plan.room_name}-{','.join(s.seat_num for s in plan.seats)}"

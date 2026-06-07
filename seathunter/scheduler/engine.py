@@ -52,6 +52,7 @@ class SchedulerEngine:
         self.on_error: Optional[Callable] = None
         self.on_idle: Optional[Callable] = None
         self.on_checkin_result: Optional[Callable] = None  # 新增：签到结果回调
+        self.on_friend_confirm: Optional[Callable] = None  # 好友确认回调
 
         # Current state for status queries
         self._state_lock = threading.Lock()
@@ -64,6 +65,12 @@ class SchedulerEngine:
         self._checkin_lock = threading.Lock()
         self._active_checkin_runners: List[CheckInRunner] = []
         self._checkin_runners_lock = threading.Lock()
+
+        # 设置好友确认回调
+        def _friend_confirm(booking_id, friend_uid):
+            if self.on_friend_confirm:
+                self.on_friend_confirm(booking_id, friend_uid)
+        self.runner.set_friend_confirm_registry(_friend_confirm)
 
     @property
     def is_running(self) -> bool:
