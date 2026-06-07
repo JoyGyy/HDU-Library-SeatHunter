@@ -280,6 +280,10 @@ class GuiApp:
         ttk.Button(checkin_btn_row, text="签到", command=self._manual_checkin_from_entry).pack(side=tk.LEFT, fill=tk.X, expand=True)
         ttk.Button(checkin_btn_row, text="从历史选择", command=self._pick_booking_from_history).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(3, 0))
 
+        # 签到结果标签
+        self._checkin_result_label = ttk.Label(checkin_frame, text="", foreground="gray", wraplength=150)
+        self._checkin_result_label.pack(fill=tk.X, pady=(5, 0))
+
         self._refresh_schedules_tree()
         self._update_status_display()
 
@@ -1537,11 +1541,21 @@ class GuiApp:
             pass
 
     def _on_checkin_result(self, success, message, plan_desc):
-        """签到结果回调"""
+        """签到结果回调（从引擎线程调用）"""
         if success:
             self._log(f"自动签到成功: {plan_desc}", "success")
+            try:
+                self.root.after(0, lambda: self._checkin_result_label.config(
+                    text=f"✅ 签到成功: {plan_desc}", foreground="green"))
+            except RuntimeError:
+                pass
         else:
             self._log(f"自动签到失败: {plan_desc} - {message}", "error")
+            try:
+                self.root.after(0, lambda: self._checkin_result_label.config(
+                    text=f"❌ 签到失败: {message}", foreground="red"))
+            except RuntimeError:
+                pass
 
     def _pick_booking_from_history(self):
         """从预约历史中选择 bookingId"""
@@ -1612,14 +1626,15 @@ class GuiApp:
             messagebox.showwarning("提示", "请输入 bookingId")
             return
 
+        self._checkin_result_label.config(text="签到中...", foreground="gray")
         self._log(f"正在签到 (bookingId={booking_id})...", "info")
         success, msg, _ = self.session_mgr.api_client.check_in(booking_id)
         if success:
             self._log("签到成功！", "success")
-            messagebox.showinfo("成功", "签到成功！")
+            self._checkin_result_label.config(text="✅ 签到成功！", foreground="green")
         else:
             self._log(f"签到失败: {msg}", "error")
-            messagebox.showerror("失败", f"签到失败: {msg}")
+            self._checkin_result_label.config(text=f"❌ 签到失败: {msg}", foreground="red")
 
     # ================================================================
     # Utilities
