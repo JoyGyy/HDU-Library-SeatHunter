@@ -112,7 +112,7 @@ class GuiApp:
 
         self._build_booking_tab()      # Tab 0: 预约
         self._build_scheduler_tab()    # Tab 1: 调度
-        self._build_status_tab()       # Tab 2: 工具（后面重命名为 _build_tools_tab）
+        self._build_tools_tab()        # Tab 2: 工具
         self._build_settings_tab()     # Tab 3: 设置
         self._build_help_tab()         # Tab 4: 帮助
 
@@ -279,45 +279,74 @@ class GuiApp:
         self._refresh_schedules_tree()
         self._update_status_display()
 
-    # ─── Tab 4: Status ──────────────────────────────────────────
+    # ─── Tab 2: 工具 ──────────────────────────────────────────
 
-    def _build_status_tab(self):
-        frame = ttk.Frame(self.notebook, padding=20)
-        self.notebook.add(frame, text="状态")
+    def _build_tools_tab(self):
+        """Tab 2: 工具 — UID 管理 + 预约历史"""
+        frame = ttk.Frame(self.notebook, padding=5)
+        self.notebook.add(frame, text="工具")
 
-        # 用户信息
-        user_frame = ttk.LabelFrame(frame, text="当前用户", padding=15)
-        user_frame.pack(fill=tk.X, pady=(0, 10))
+        # ── 上半部分：UID 管理 ──
+        uid_frame = ttk.LabelFrame(frame, text="UID 管理", padding=5)
+        uid_frame.pack(fill=tk.BOTH, expand=True)
 
+        user_row = ttk.Frame(uid_frame)
+        user_row.pack(fill=tk.X, pady=(0, 5))
         self.user_info_labels = {}
-        for i, (key, label_text) in enumerate([
-            ("uid", "UID"),
-            ("name", "姓名"),
-        ]):
-            ttk.Label(user_frame, text=f"{label_text}:", font=("", 10, "bold")).grid(
-                row=i, column=0, sticky=tk.W, pady=4,
-            )
-            lbl = ttk.Label(user_frame, text="—", font=("", 10))
-            lbl.grid(row=i, column=1, sticky=tk.W, padx=(15, 0), pady=4)
+        for key, label_text in [("uid", "UID"), ("name", "姓名")]:
+            ttk.Label(user_row, text=f"{label_text}:", font=("", 9, "bold")).pack(side=tk.LEFT, padx=(0, 5))
+            lbl = ttk.Label(user_row, text="—", font=("", 9))
+            lbl.pack(side=tk.LEFT, padx=(0, 15))
             self.user_info_labels[key] = lbl
 
-        btn_row = ttk.Frame(user_frame)
-        btn_row.grid(row=2, column=0, columnspan=2, sticky=tk.W, pady=(8, 0))
-        ttk.Label(btn_row, text="给朋友预约时需要对方的 UID →", foreground="gray").pack(side=tk.LEFT)
-        ttk.Button(btn_row, text="查询他人UID", command=self._lookup_uid_dialog).pack(side=tk.LEFT, padx=5)
+        ttk.Button(user_row, text="查询他人UID", command=self._lookup_uid_dialog).pack(side=tk.RIGHT)
 
-        # 已保存的 UID 记录
-        uid_frame = ttk.LabelFrame(frame, text="已保存的 UID 记录", padding=10)
-        uid_frame.pack(fill=tk.BOTH, expand=True, pady=(10, 0))
+        uid_tree_frame = ttk.Frame(uid_frame)
+        uid_tree_frame.pack(fill=tk.BOTH, expand=True)
 
         cols = ("student_id", "uid", "name")
-        self.uid_tree = ttk.Treeview(uid_frame, columns=cols, show="headings", height=6)
+        self.uid_tree = ttk.Treeview(uid_tree_frame, columns=cols, show="headings", height=5)
         for col, text, w in [("student_id", "学号", 120), ("uid", "UID", 120), ("name", "姓名", 120)]:
             self.uid_tree.heading(col, text=text)
             self.uid_tree.column(col, width=w, anchor=tk.CENTER)
-        self.uid_tree.pack(fill=tk.BOTH, expand=True)
+        self.uid_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        uid_sb = ttk.Scrollbar(uid_tree_frame, orient=tk.VERTICAL, command=self.uid_tree.yview)
+        self.uid_tree.configure(yscrollcommand=uid_sb.set)
+        uid_sb.pack(side=tk.RIGHT, fill=tk.Y)
+
+        uid_btn_frame = ttk.Frame(uid_frame)
+        uid_btn_frame.pack(fill=tk.X, pady=(3, 0))
+        ttk.Button(uid_btn_frame, text="删除选中记录", command=self._delete_selected_uid).pack(side=tk.LEFT)
+
+        # ── 下半部分：预约历史 ──
+        history_frame = ttk.LabelFrame(frame, text="预约历史", padding=5)
+        history_frame.pack(fill=tk.BOTH, expand=True, pady=(5, 0))
+
+        hist_tree_frame = ttk.Frame(history_frame)
+        hist_tree_frame.pack(fill=tk.BOTH, expand=True)
+
+        cols = ("time", "plan_id", "seat", "date", "result", "message")
+        self.history_tree = ttk.Treeview(hist_tree_frame, columns=cols, show="headings", height=6)
+        for col, text, w in [
+            ("time", "时间", 130), ("plan_id", "方案ID", 100),
+            ("seat", "座位", 80), ("date", "日期", 90),
+            ("result", "结果", 60), ("message", "消息", 200),
+        ]:
+            self.history_tree.heading(col, text=text)
+            self.history_tree.column(col, width=w, anchor=tk.CENTER if col in ("time", "date", "result") else tk.W)
+
+        hist_sb = ttk.Scrollbar(hist_tree_frame, orient=tk.VERTICAL, command=self.history_tree.yview)
+        self.history_tree.configure(yscrollcommand=hist_sb.set)
+        self.history_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        hist_sb.pack(side=tk.RIGHT, fill=tk.Y)
+
+        hist_btn_frame = ttk.Frame(history_frame)
+        hist_btn_frame.pack(fill=tk.X, pady=(3, 0))
+        ttk.Button(hist_btn_frame, text="清空历史", command=self._clear_history).pack(side=tk.LEFT)
 
         self._refresh_uid_tree()
+        self._refresh_history_tree()
 
     # ─── Tab 5: Settings ────────────────────────────────────────
 
@@ -1244,6 +1273,43 @@ class GuiApp:
             self.uid_tree.insert("", tk.END, values=(
                 student_id, info.get("uid", ""), info.get("name", ""),
             ))
+
+    def _delete_selected_uid(self):
+        """删除选中的 UID 记录"""
+        selected = self.uid_tree.selection()
+        if not selected:
+            messagebox.showinfo("提示", "请先选择要删除的记录")
+            return
+        if not messagebox.askyesno("确认", f"确定删除 {len(selected)} 条 UID 记录？"):
+            return
+        for item in selected:
+            values = self.uid_tree.item(item, "values")
+            student_id = values[0]
+            self.uid_store.remove(student_id)
+        self._refresh_uid_tree()
+
+    def _refresh_history_tree(self):
+        """刷新预约历史列表"""
+        for item in self.history_tree.get_children():
+            self.history_tree.delete(item)
+        records = self.history.query(50)
+        for r in records:
+            result_str = "成功" if r.get("success") else "失败"
+            self.history_tree.insert("", tk.END, values=(
+                r.get("timestamp", ""),
+                r.get("plan_id", ""),
+                r.get("seat_num", ""),
+                r.get("target_date", ""),
+                result_str,
+                r.get("message", ""),
+            ))
+
+    def _clear_history(self):
+        """清空预约历史"""
+        if not messagebox.askyesno("确认", "确定清空所有预约历史？"):
+            return
+        self.history.clear()
+        self._refresh_history_tree()
 
     def _lookup_uid_dialog(self):
         """打开查询他人 UID 的对话框"""
