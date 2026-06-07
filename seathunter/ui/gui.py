@@ -236,7 +236,7 @@ class GuiApp:
         tree_frame = ttk.Frame(plans_frame)
         tree_frame.pack(fill=tk.BOTH, expand=True)
 
-        columns = ("idx", "plan_id", "room", "floor", "seats", "time", "duration")
+        columns = ("idx", "plan_id", "room", "floor", "seats", "time", "duration", "bookers")
         self.plans_tree = ttk.Treeview(
             tree_frame, columns=columns, show="headings", height=5,
         )
@@ -244,7 +244,7 @@ class GuiApp:
             ("idx", "序号", 50), ("plan_id", "方案ID", 130),
             ("room", "房间名", 130), ("floor", "楼层", 80),
             ("seats", "座位号", 100), ("time", "开始时间", 100),
-            ("duration", "时长", 60),
+            ("duration", "时长", 60), ("bookers", "预约人", 120),
         ]:
             self.plans_tree.heading(col, text=text)
             self.plans_tree.column(col, width=width, anchor=tk.CENTER if col in ("idx", "time", "duration") else tk.W)
@@ -970,9 +970,24 @@ class GuiApp:
                 f"{s.seat_num}({s.booker_uid})" if s.booker_uid else s.seat_num
                 for s in plan.seats
             )
+            # 计算预约人显示
+            booker_names = []
+            for s in plan.seats:
+                if s.booker_uid and s.booker_uid != self.session_mgr.uid:
+                    matched = False
+                    for sid, info in self.friend_store.get_all().items():
+                        if info["uid"] == s.booker_uid:
+                            booker_names.append(info["name"])
+                            matched = True
+                            break
+                    if not matched:
+                        booker_names.append(f"UID:{s.booker_uid[:6]}")
+                else:
+                    booker_names.append("我")
+            bookers_str = "+".join(booker_names)
             self.plans_tree.insert("", tk.END, iid=str(i), values=(
                 i + 1, plan.id, plan.room_name, plan.floor_name,
-                seats_str, plan.begin_time, f"{plan.duration_hours}小时",
+                seats_str, plan.begin_time, f"{plan.duration_hours}小时", bookers_str,
             ))
 
     def _add_plan_dialog(self):
@@ -1038,8 +1053,24 @@ class GuiApp:
         seats_var = tk.StringVar()
         ttk.Entry(frame, textvariable=seats_var, width=25).grid(row=6, column=1, pady=4)
 
+        # 代预约好友选项
+        friend_row = ttk.Frame(frame)
+        friend_row.grid(row=7, column=0, columnspan=3, sticky=tk.W, pady=4)
+        self._plan_friend_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(friend_row, text="代预约好友", variable=self._plan_friend_var,
+                        command=self._toggle_friend_seat).pack(side=tk.LEFT)
+        self._plan_friend_combo = ttk.Combobox(friend_row, state="disabled", width=15)
+        self._plan_friend_combo.pack(side=tk.LEFT, padx=5)
+        # 填充好友列表
+        friends = self.friend_store.get_all()
+        friend_names = [f"{info['name']} ({sid})" for sid, info in friends.items()]
+        self._plan_friend_combo["values"] = friend_names
+        if friend_names:
+            self._plan_friend_combo.set(friend_names[0])
+        self._friend_sid_map = {f"{info['name']} ({sid})": sid for sid, info in friends.items()}
+
         # Booker UIDs
-        ttk.Label(frame, text="预约人UID:").grid(row=7, column=0, sticky=tk.W, pady=4)
+        ttk.Label(frame, text="预约人UID:").grid(row=8, column=0, sticky=tk.W, pady=4)
         bookers_var = tk.StringVar()
         bookers_entry = ttk.Entry(frame, textvariable=bookers_var, width=20)
         bookers_entry.grid(row=7, column=1, sticky=tk.W, pady=4)
@@ -1090,10 +1121,10 @@ class GuiApp:
             ttk.Button(bf, text="确认", command=confirm).pack(side=tk.LEFT, padx=5)
             ttk.Button(bf, text="取消", command=pick_dlg.destroy).pack(side=tk.LEFT, padx=5)
 
-        ttk.Button(frame, text="从记录中选择", command=pick_uid).grid(row=7, column=2, padx=4, sticky=tk.W)
+        ttk.Button(frame, text="从记录中选择", command=pick_uid).grid(row=8, column=2, padx=4, sticky=tk.W)
 
         # Plan ID
-        ttk.Label(frame, text="方案ID:").grid(row=8, column=0, sticky=tk.W, pady=4)
+        ttk.Label(frame, text="方案ID:").grid(row=9, column=0, sticky=tk.W, pady=4)
         plan_id_var = tk.StringVar()
         ttk.Entry(frame, textvariable=plan_id_var, width=25).grid(row=8, column=1, pady=4)
 
@@ -1117,12 +1148,19 @@ class GuiApp:
 
         # Buttons
         btn_frame = ttk.Frame(frame)
-        btn_frame.grid(row=9, column=0, columnspan=2, pady=15)
+        btn_frame.grid(row=10, column=0, columnspan=2, pady=15)
         ttk.Button(
             btn_frame, text="确认",
             command=lambda: self._confirm_add_plan(dlg, room_var, floor_var, date_var, time_var, dur_var, seats_var, bookers_var, plan_id_var),
         ).pack(side=tk.LEFT, padx=10)
         ttk.Button(btn_frame, text="取消", command=dlg.destroy).pack(side=tk.LEFT, padx=10)
+
+    def _toggle_friend_seat(self):
+        """切换代预约好友状态下拉框的启用/禁用"""
+        if self._plan_friend_var.get():
+            self._plan_friend_combo.config(state="readonly")
+        else:
+            self._plan_friend_combo.config(state="disabled")
 
     def _confirm_add_plan(self, dlg, room_var, floor_var, date_var, time_var, dur_var, seats_var, bookers_var, plan_id_var):
         room_name = room_var.get().strip()
@@ -1193,6 +1231,15 @@ class GuiApp:
         booker_uids = []
         if bookers_input:
             booker_uids = [b.strip() for b in bookers_input.replace("，", ",").split(",") if b.strip()]
+
+        # 如果勾选了代预约好友，追加好友 UID
+        if self._plan_friend_var.get():
+            friend_combo_val = self._plan_friend_combo.get()
+            friend_sid = self._friend_sid_map.get(friend_combo_val)
+            if friend_sid:
+                friend_info = self.friend_store.get(friend_sid)
+                if friend_info and friend_info["uid"] not in booker_uids:
+                    booker_uids.append(friend_info["uid"])
 
         seats_info = self.room_cache.get_seats(room_name, floor_name)
         seat_list = []
