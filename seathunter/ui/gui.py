@@ -1497,9 +1497,9 @@ class GuiApp:
     def _on_checkin_result(self, success, message, plan_desc):
         """签到结果回调"""
         if success:
-            self._log(f"自动签到成功: {plan_desc}")
+            self._log(f"自动签到成功: {plan_desc}", "success")
         else:
-            self._log(f"自动签到失败: {plan_desc} - {message}")
+            self._log(f"自动签到失败: {plan_desc} - {message}", "error")
 
     def _manual_checkin(self):
         """手动签到"""
@@ -1525,13 +1525,13 @@ class GuiApp:
                 messagebox.showwarning("提示", "bookingId 不能为空", parent=dialog)
                 return
             dialog.destroy()
-            self._log(f"正在签到 (bookingId={booking_id})...")
+            self._log(f"正在签到 (bookingId={booking_id})...", "info")
             success, msg, _ = self.session_mgr.api_client.check_in(booking_id)
             if success:
-                self._log("签到成功！")
+                self._log("签到成功！", "success")
                 messagebox.showinfo("成功", "签到成功！")
             else:
-                self._log(f"签到失败: {msg}")
+                self._log(f"签到失败: {msg}", "error")
                 messagebox.showerror("失败", f"签到失败: {msg}")
 
         ttk.Button(dialog, text="签到", command=do_checkin).pack(pady=10)
@@ -1539,6 +1539,15 @@ class GuiApp:
     # ================================================================
     # Utilities
     # ================================================================
+
+    def _log(self, message: str, tag: str = "info"):
+        """向预约日志区写入一条消息"""
+        ts = datetime.now().strftime("%H:%M:%S")
+        full_msg = f"[{ts}] {message}\n"
+        try:
+            self.root.after(0, self._append_booking_log, full_msg, tag)
+        except RuntimeError:
+            pass
 
     def _center_on_parent(self, dlg, w, h):
         dlg.update_idletasks()
