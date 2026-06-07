@@ -483,20 +483,22 @@ class GuiApp:
         # 未登录 — 显示输入框
         user = self.config.get_user_info()
 
-        ttk.Label(body, text="学号:").grid(row=0, column=0, sticky=tk.W, pady=5)
+        sid_row = ttk.Frame(body)
+        sid_row.pack(fill=tk.X, pady=5)
+        ttk.Label(sid_row, text="学号:", width=6).pack(side=tk.LEFT)
         self._wiz_login_sid = tk.StringVar(value=user.get("login_name", ""))
-        ttk.Entry(body, textvariable=self._wiz_login_sid, width=25).grid(row=0, column=1, pady=5)
+        ttk.Entry(sid_row, textvariable=self._wiz_login_sid, width=25).pack(side=tk.LEFT, padx=5)
 
-        ttk.Label(body, text="密码:").grid(row=1, column=0, sticky=tk.W, pady=5)
+        pwd_row = ttk.Frame(body)
+        pwd_row.pack(fill=tk.X, pady=5)
+        ttk.Label(pwd_row, text="密码:", width=6).pack(side=tk.LEFT)
         self._wiz_login_pwd = tk.StringVar(value=user.get("password", ""))
-        ttk.Entry(body, textvariable=self._wiz_login_pwd, width=25, show="*").grid(row=1, column=1, pady=5)
+        ttk.Entry(pwd_row, textvariable=self._wiz_login_pwd, width=25, show="*").pack(side=tk.LEFT, padx=5)
 
         self._wiz_login_status = ttk.Label(body, text="", foreground="blue")
-        self._wiz_login_status.grid(row=2, column=0, columnspan=2, pady=5)
+        self._wiz_login_status.pack(pady=5)
 
-        ttk.Button(body, text="登录", command=self._wizard_do_login).grid(
-            row=3, column=0, columnspan=2, pady=10,
-        )
+        ttk.Button(body, text="登录", command=self._wizard_do_login).pack(pady=10)
 
     def _wizard_do_login(self):
         sid = self._wiz_login_sid.get().strip()
