@@ -42,7 +42,7 @@ def playwright_login(username: str, password: str, library_url: str,
         from playwright.async_api import async_playwright
     except ImportError:
         logger.error("Playwright not installed. Run: pip install playwright && python -m playwright install chromium")
-        return (False, LOGIN_ERR_AUTH, None, "", "")
+        return (False, LOGIN_ERR_AUTH, None, "", "", "Playwright not installed")
 
     async def _login():
         async with async_playwright() as p:

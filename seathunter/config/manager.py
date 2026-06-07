@@ -60,7 +60,7 @@ class ConfigManager:
             return
         os.makedirs(os.path.dirname(self.config_path), exist_ok=True)
         with open(self.config_path, "w", encoding="utf-8") as f:
-            yaml.dump(self._config, f, encoding="utf-8", allow_unicode=True, default_flow_style=False)
+            yaml.dump(self._config, f, allow_unicode=True, default_flow_style=False)
 
     def get_plans(self) -> List[Plan]:
         """Get all plans from config."""

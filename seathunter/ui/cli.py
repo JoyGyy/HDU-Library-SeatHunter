@@ -403,13 +403,23 @@ class CliUI:
         for retry in range(settings["max_try_times"]):
             print_info(f"第{retry + 1}次尝试")
             for i, plan in enumerate(plans):
-                # Build datetime from plan template + today
+                # 使用方案中的目标日期（如有），否则用今天
                 now = datetime.now()
+                if plan.target_date:
+                    plan_date = datetime.strptime(plan.target_date, "%Y-%m-%d")
+                else:
+                    plan_date = now
                 h, m, s = (int(x) for x in plan.begin_time.split(":"))
-                begin_time = now.replace(hour=h, minute=m, second=s, microsecond=0)
+                begin_time = plan_date.replace(hour=h, minute=m, second=s, microsecond=0)
 
                 seat_ids = [seat.seat_id for seat in plan.seats]
-                booker_uids = [self.session_mgr.uid] * len(plan.seats)
+                booker_uids = [
+                    seat.booker_uid if seat.booker_uid else self.session_mgr.uid
+                    for seat in plan.seats
+                ]
+                # 确保当前用户在预约人列表中
+                if self.session_mgr.uid not in booker_uids:
+                    booker_uids[0] = self.session_mgr.uid
 
                 resp = self.api.book_seat(begin_time, plan.duration_hours, seat_ids, booker_uids)
                 result = BookingResult.from_api_response(resp, plan_id=plan.id)
