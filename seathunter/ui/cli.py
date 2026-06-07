@@ -120,16 +120,14 @@ class CliUI:
             status = colorize(" [调度运行中]", Color.GREEN)
         print(colorize(f"SeatHunter 主菜单{status}", Color.BOLD))
         print("=" * 40)
-        print("1. 查看/添加/删除座位方案")
-        print("2. 批量修改方案预约时间")
-        print("3. 立即开始抢座")
-        print("4. 启动/管理定时调度")
-        print("5. 查看调度状态")
-        print("6. 修改请求间隔和次数")
-        print("7. 手动签到")
-        print("8. 查询他人 UID")
-        print("9. 使用帮助")
-        print("10. 退出")
+        print("1. 方案管理")
+        print("2. 立即开始抢座")
+        print("3. 调度管理")
+        print("4. 修改请求间隔和次数")
+        print("5. 手动签到")
+        print("6. 查询他人 UID")
+        print("7. 使用帮助")
+        print("8. 退出")
 
     def run(self):
         """Main menu loop."""
@@ -143,22 +141,18 @@ class CliUI:
                 if choice == 1:
                     self._manage_plans()
                 elif choice == 2:
-                    self._change_time()
-                elif choice == 3:
                     self._start_now()
-                elif choice == 4:
+                elif choice == 3:
                     self._manage_schedules()
-                elif choice == 5:
-                    self._show_status()
-                elif choice == 6:
+                elif choice == 4:
                     self._set_settings()
-                elif choice == 7:
+                elif choice == 5:
                     self._manual_checkin()
-                elif choice == 8:
+                elif choice == 6:
                     self._lookup_uid()
-                elif choice == 9:
+                elif choice == 7:
                     self._help()
-                elif choice == 10:
+                elif choice == 8:
                     self._exit()
                 else:
                     print_error("输入错误，请重新输入")
@@ -176,7 +170,8 @@ class CliUI:
         while True:
             print("\n1. 添加方案")
             print("2. 删除方案")
-            print("3. 返回上一级")
+            print("3. 批量修改方案预约时间")
+            print("4. 返回上一级")
             try:
                 choice = int(input("请输入选项："))
                 if choice == 1:
@@ -184,6 +179,8 @@ class CliUI:
                 elif choice == 2:
                     self._delete_plan()
                 elif choice == 3:
+                    self._change_time()
+                elif choice == 4:
                     break
                 else:
                     print_error("输入错误")
@@ -460,7 +457,8 @@ class CliUI:
             print("4. 添加按日期调度")
             print("5. 查看已保存的调度")
             print("6. 删除调度")
-            print("7. 返回上一级")
+            print("7. 查看调度状态")
+            print("8. 返回上一级")
             try:
                 choice = int(input("请输入选项："))
                 if choice == 1:
@@ -476,6 +474,8 @@ class CliUI:
                 elif choice == 6:
                     self._delete_schedule()
                 elif choice == 7:
+                    self._show_status()
+                elif choice == 8:
                     break
                 else:
                     print_error("输入错误")
