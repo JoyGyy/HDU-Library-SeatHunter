@@ -1621,14 +1621,14 @@ class GuiApp:
 
     def _fetch_current_bookings(self):
         """从服务器获取当前预约列表"""
-        if not self.session_mgr.is_logged_in:
+        if not self._logged_in:
             messagebox.showwarning("提示", "请先登录")
             return
 
         self._log("正在获取当前预约...", "info")
 
         def _do():
-            bookings = self.session_mgr.api_client.get_my_bookings()
+            bookings = self.api.get_my_bookings()
             self.root.after(0, lambda: self._show_bookings_dialog(bookings))
 
         threading.Thread(target=_do, daemon=True).start()
@@ -1696,7 +1696,7 @@ class GuiApp:
 
     def _manual_checkin_from_entry(self):
         """从输入框获取 bookingId 并签到"""
-        if not self.session_mgr.is_logged_in:
+        if not self._logged_in:
             messagebox.showwarning("提示", "请先登录")
             return
 
@@ -1709,7 +1709,7 @@ class GuiApp:
         self._log(f"正在签到 (bookingId={booking_id})...", "info")
 
         def _do():
-            success, msg, _ = self.session_mgr.api_client.check_in(booking_id)
+            success, msg, _ = self.api.check_in(booking_id)
             if success:
                 self._log("签到成功！", "success")
                 self.root.after(0, lambda: self._checkin_result_label.config(

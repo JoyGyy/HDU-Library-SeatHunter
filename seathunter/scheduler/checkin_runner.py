@@ -29,7 +29,7 @@ class CheckInRunner:
         """取消当前签到任务。"""
         self._cancelled = True
 
-    def get_checkin_window(self, begin_time: datetime) -> tuple:
+    def get_checkin_window(self, begin_time: datetime) -> tuple[datetime, datetime]:
         """计算签到时间窗口
 
         Args:
@@ -58,11 +58,14 @@ class CheckInRunner:
         window_start, window_end = self.get_checkin_window(begin_time)
         now = datetime.now()
 
-        # 如果还没到签到窗口，等待
+        # 如果还没到签到窗口，等待（可中断）
         if now < window_start:
             wait_seconds = int((window_start - now).total_seconds())
             logger.info("签到窗口未到，等待 %d 秒后开始签到", wait_seconds)
-            sleep(wait_seconds)
+            for _ in range(wait_seconds):
+                if self._cancelled:
+                    return False
+                sleep(1)
 
         # 在窗口内重试签到
         for attempt in range(1, self.max_try_times + 1):

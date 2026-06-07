@@ -14,6 +14,7 @@ from typing import List, Optional, Callable, Dict, Any
 from seathunter.models.schedule import Schedule
 from seathunter.models.booking_result import BookingResult
 from seathunter.scheduler.booking_runner import BookingRunner, WEEKDAY_NAMES
+from seathunter.scheduler.checkin_runner import CheckInRunner, CHECKIN_ADVANCE_MINUTES
 from seathunter.auth.session_manager import SessionManager
 from seathunter.config.manager import ConfigManager
 
@@ -61,6 +62,8 @@ class SchedulerEngine:
         # 新增：签到任务队列
         self._checkin_tasks: List[Dict[str, Any]] = []
         self._checkin_lock = threading.Lock()
+        self._active_checkin_runners: List[CheckInRunner] = []
+        self._checkin_runners_lock = threading.Lock()
 
     @property
     def is_running(self) -> bool:
@@ -109,6 +112,12 @@ class SchedulerEngine:
         self._cancel_booking.set()
         self.runner.cancel()
 
+        # 取消所有活跃的签到 runner
+        with self._checkin_runners_lock:
+            for r in self._active_checkin_runners:
+                r.cancel()
+            self._active_checkin_runners.clear()
+
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=5)
         with self._state_lock:
@@ -125,12 +134,16 @@ class SchedulerEngine:
             target_date: 预约日期 "YYYY-MM-DD"
             plan_desc: 方案描述（用于日志）
         """
-        from seathunter.scheduler.checkin_runner import CheckInRunner, CHECKIN_ADVANCE_MINUTES
-
-        # 计算签到窗口
-        date_obj = datetime.strptime(target_date, "%Y-%m-%d")
-        hour, minute, second = (int(x) for x in begin_time.split(":"))
-        begin_dt = date_obj.replace(hour=hour, minute=minute, second=second)
+        try:
+            date_obj = datetime.strptime(target_date, "%Y-%m-%d")
+            parts = begin_time.split(":")
+            hour, minute = int(parts[0]), int(parts[1])
+            second = int(parts[2]) if len(parts) > 2 else 0
+            begin_dt = date_obj.replace(hour=hour, minute=minute, second=second)
+        except (ValueError, IndexError) as e:
+            logger.error("注册签到任务失败，日期格式错误: date=%s time=%s error=%s",
+                        target_date, begin_time, e)
+            return
         window_start = begin_dt - timedelta(minutes=CHECKIN_ADVANCE_MINUTES)
         window_end = begin_dt + timedelta(minutes=CHECKIN_ADVANCE_MINUTES)
 
@@ -152,8 +165,6 @@ class SchedulerEngine:
 
     def _process_pending_checkins(self):
         """处理待执行的签到任务（非阻塞，在引擎主循环中调用）"""
-        from seathunter.scheduler.checkin_runner import CheckInRunner
-
         with self._checkin_lock:
             now = datetime.now()
             # 找到窗口内且未过期的任务
@@ -172,6 +183,8 @@ class SchedulerEngine:
 
         # 执行就绪的签到任务（在新线程中，不阻塞引擎）
         for task in ready_tasks:
+            if self._stop_event.is_set():
+                break
             t = threading.Thread(
                 target=self._execute_checkin,
                 args=(task,),
@@ -182,29 +195,39 @@ class SchedulerEngine:
 
     def _execute_checkin(self, task: dict):
         """在独立线程中执行签到"""
-        from seathunter.scheduler.checkin_runner import CheckInRunner
-
         checkin_runner = CheckInRunner(
             api_client=self.runner.api,
             interval=self.runner.interval,
             max_try_times=self.runner.max_try_times,
         )
 
+        # 注册到活跃 runner 列表，以便 engine stop 时可取消
+        with self._checkin_runners_lock:
+            self._active_checkin_runners.append(checkin_runner)
+
         def on_result(success, message):
             if self.on_checkin_result:
                 self.on_checkin_result(success, message, task["plan_desc"])
 
-        logger.info("开始签到: %s (bookingId=%s)", task["plan_desc"], task["booking_id"])
-        checkin_runner.run_checkin(
-            booking_id=task["booking_id"],
-            begin_time=task["begin_time"],
-            on_result=on_result,
-        )
+        try:
+            logger.info("开始签到: %s (bookingId=%s)", task["plan_desc"], task["booking_id"])
+            checkin_runner.run_checkin(
+                booking_id=task["booking_id"],
+                begin_time=task["begin_time"],
+                on_result=on_result,
+            )
+        finally:
+            with self._checkin_runners_lock:
+                if checkin_runner in self._active_checkin_runners:
+                    self._active_checkin_runners.remove(checkin_runner)
 
     def _engine_loop(self):
         """Main engine loop running in background thread."""
         while not self._stop_event.is_set():
             try:
+                # 每次循环都检查待执行的签到任务
+                self._process_pending_checkins()
+
                 schedules = self.config.get_schedules()
                 plans_map = {p.id: p for p in self.config.get_plans()}
 
@@ -284,14 +307,11 @@ class SchedulerEngine:
                     if self.on_booking_result:
                         self.on_booking_result(result)
 
-                def _on_attempt(attempt_num, plan_idx):
-                    pass  # Could add callback
-
                 results = self.runner.run_booking(
                     plans=active_plans,
                     target_date=target_date,
                     on_result=_on_result,
-                    on_attempt=_on_attempt,
+                    on_attempt=None,
                 )
 
                 # Log results
@@ -300,9 +320,6 @@ class SchedulerEngine:
                         logger.info("Booking result: %s", r)
                     else:
                         logger.warning("Booking result: %s", r)
-
-                # 新增：预约成功后，检查是否需要执行签到任务
-                self._process_pending_checkins()
 
                 # After booking, loop back to find next trigger
                 # Brief pause to avoid tight loop
