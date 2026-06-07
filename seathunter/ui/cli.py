@@ -126,9 +126,10 @@ class CliUI:
         print("4. 启动/管理定时调度")
         print("5. 查看调度状态")
         print("6. 修改请求间隔和次数")
-        print("7. 查询他人 UID")
-        print("8. 使用帮助")
-        print("9. 退出")
+        print("7. 手动签到")
+        print("8. 查询他人 UID")
+        print("9. 使用帮助")
+        print("10. 退出")
 
     def run(self):
         """Main menu loop."""
@@ -152,10 +153,12 @@ class CliUI:
                 elif choice == 6:
                     self._set_settings()
                 elif choice == 7:
-                    self._lookup_uid()
+                    self._manual_checkin()
                 elif choice == 8:
-                    self._help()
+                    self._lookup_uid()
                 elif choice == 9:
+                    self._help()
+                elif choice == 10:
                     self._exit()
                 else:
                     print_error("输入错误，请重新输入")
@@ -508,6 +511,7 @@ class CliUI:
 
         print_info("启动调度引擎...")
         self.engine.start()
+        self.runner.set_checkin_registry(self.engine.register_checkin)
         print_success("调度引擎已启动")
 
     def _stop_scheduler(self):
@@ -709,6 +713,26 @@ class CliUI:
             print_success("设置已更新")
         except Exception as e:
             print_error(str(e))
+
+    # --- 手动签到 ---
+
+    def _manual_checkin(self):
+        """手动签到"""
+        if not self.session_mgr.is_logged_in:
+            print_warning("请先登录（选项3立即抢座会自动登录）")
+            return
+
+        booking_id = input("\n请输入 bookingId（从预约记录中获取）: ").strip()
+        if not booking_id:
+            print_warning("bookingId 不能为空")
+            return
+
+        print(f"\n正在签到 (bookingId={booking_id})...")
+        success, msg, _ = self.api.check_in(booking_id)
+        if success:
+            print_success("签到成功！")
+        else:
+            print_error(f"签到失败: {msg}")
 
     # --- UID 查询 ---
 
