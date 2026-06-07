@@ -373,13 +373,371 @@ class GuiApp:
         self._refresh_schedules_tree()
         self._update_status_display()
 
-    # ─── Tab 0: 首页（占位）──────────────────────────────────────
+    # ─── Tab 0: 首页 — 新手引导 / 仪表盘 ────────────────────────
 
     def _build_home_tab(self):
-        """Tab 0: 首页 — 占位，后续 Task 6 实现"""
-        frame = ttk.Frame(self.notebook, padding=5)
-        self.notebook.add(frame, text="首页")
-        ttk.Label(frame, text="首页（待实现）", font=("", 12)).pack(pady=20)
+        """Tab 0: 首页 — 新手引导 / 仪表盘"""
+        self._home_frame = ttk.Frame(self.notebook, padding=5)
+        self.notebook.add(self._home_frame, text="首页")
+
+        # 内容区域（由引导或仪表盘填充）
+        self._home_content = ttk.Frame(self._home_frame)
+        self._home_content.pack(fill=tk.BOTH, expand=True)
+
+        # 判断是否首次使用
+        is_first_time = not self.session_mgr.uid or len(self.config.get_plans()) == 0
+        if is_first_time:
+            self._wizard_step = 0
+            self._show_wizard()
+        else:
+            self._show_dashboard()
+
+    # ─── 新手引导 ─────────────────────────────────────────────
+
+    def _show_wizard(self):
+        """显示新手引导（4 步）"""
+        # 清空内容区
+        for w in self._home_content.winfo_children():
+            w.destroy()
+
+        # 步骤指示器
+        indicator = ttk.Frame(self._home_content)
+        indicator.pack(fill=tk.X, pady=(0, 10))
+        step_names = ["登录", "添加好友", "创建方案", "设置调度"]
+        for i, name in enumerate(step_names):
+            if i == self._wizard_step:
+                ttk.Label(indicator, text=f" [{i + 1}. {name}] ",
+                          font=("", 10, "bold"), foreground="#0066cc").pack(side=tk.LEFT, padx=2)
+            else:
+                ttk.Label(indicator, text=f" {i + 1}. {name} ",
+                          font=("", 10), foreground="gray").pack(side=tk.LEFT, padx=2)
+
+        ttk.Separator(self._home_content, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=(0, 10))
+
+        # 步骤内容区域
+        self._wizard_body = ttk.Frame(self._home_content)
+        self._wizard_body.pack(fill=tk.BOTH, expand=True)
+
+        self._update_wizard_step()
+
+    def _update_wizard_step(self):
+        """根据当前步骤号显示对应内容"""
+        for w in self._wizard_body.winfo_children():
+            w.destroy()
+
+        if self._wizard_step == 0:
+            self._wizard_step_login()
+        elif self._wizard_step == 1:
+            self._wizard_step_friends()
+        elif self._wizard_step == 2:
+            self._wizard_step_plans()
+        elif self._wizard_step == 3:
+            self._wizard_step_scheduler()
+
+    def _wizard_nav_buttons(self, parent, show_skip=True, next_text="下一步"):
+        """在引导步骤底部添加导航按钮"""
+        btn_frame = ttk.Frame(parent)
+        btn_frame.pack(fill=tk.X, pady=(15, 0))
+
+        if show_skip:
+            ttk.Button(btn_frame, text="跳过",
+                       command=self._wizard_skip).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text=next_text,
+                   command=self._wizard_next).pack(side=tk.RIGHT, padx=5)
+
+    def _wizard_skip(self):
+        """跳过当前步骤"""
+        self._wizard_step += 1
+        if self._wizard_step >= 4:
+            self._wizard_finish()
+        else:
+            self._update_wizard_step()
+
+    def _wizard_next(self):
+        """进入下一步"""
+        self._wizard_step += 1
+        if self._wizard_step >= 4:
+            self._wizard_finish()
+        else:
+            self._update_wizard_step()
+
+    def _wizard_finish(self):
+        """引导完成，切换到仪表盘"""
+        self._show_dashboard()
+
+    # ─── 引导 Step 1: 登录 ────────────────────────────────────
+
+    def _wizard_step_login(self):
+        body = self._wizard_body
+
+        ttk.Label(body, text="第 1 步：登录你的图书馆账号",
+                  font=("", 13, "bold")).pack(anchor=tk.W, pady=(0, 10))
+
+        if self.session_mgr.uid:
+            # 已登录
+            ttk.Label(body, text=f"已登录: {self.session_mgr.name} ({self.session_mgr.uid})",
+                      font=("", 11), foreground="green").pack(anchor=tk.W, pady=5)
+            self._wizard_nav_buttons(body, show_skip=False)
+            return
+
+        # 未登录 — 显示输入框
+        user = self.config.get_user_info()
+
+        ttk.Label(body, text="学号:").grid(row=0, column=0, sticky=tk.W, pady=5)
+        self._wiz_login_sid = tk.StringVar(value=user.get("login_name", ""))
+        ttk.Entry(body, textvariable=self._wiz_login_sid, width=25).grid(row=0, column=1, pady=5)
+
+        ttk.Label(body, text="密码:").grid(row=1, column=0, sticky=tk.W, pady=5)
+        self._wiz_login_pwd = tk.StringVar(value=user.get("password", ""))
+        ttk.Entry(body, textvariable=self._wiz_login_pwd, width=25, show="*").grid(row=1, column=1, pady=5)
+
+        self._wiz_login_status = ttk.Label(body, text="", foreground="blue")
+        self._wiz_login_status.grid(row=2, column=0, columnspan=2, pady=5)
+
+        ttk.Button(body, text="登录", command=self._wizard_do_login).grid(
+            row=3, column=0, columnspan=2, pady=10,
+        )
+
+    def _wizard_do_login(self):
+        sid = self._wiz_login_sid.get().strip()
+        pwd = self._wiz_login_pwd.get().strip()
+        if not sid or not pwd:
+            self._wiz_login_status.config(text="请输入学号和密码", foreground="red")
+            return
+
+        self._wiz_login_status.config(text="登录中...", foreground="blue")
+        self.config.update_user_info(login_name=sid, password=pwd)
+
+        def worker():
+            success, err_type = self.session_mgr.login()
+            self.root.after(0, self._wizard_on_login_done, success, err_type)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _wizard_on_login_done(self, success, err_type):
+        if success:
+            self._logged_in = True
+            self.config.save()
+            self.room_cache.on_ready(self._on_rooms_ready)
+            self.room_cache.start_background_refresh()
+            # 自动进入下一步
+            self._wizard_step += 1
+            self._update_wizard_step()
+        else:
+            msg = "网络连接失败" if err_type == "network" else (
+                self.session_mgr.last_error or "账号密码错误")
+            self._wiz_login_status.config(text=f"登录失败: {msg}", foreground="red")
+
+    # ─── 引导 Step 2: 添加好友 ────────────────────────────────
+
+    def _wizard_step_friends(self):
+        body = self._wizard_body
+
+        ttk.Label(body, text="第 2 步：添加好友（可选）",
+                  font=("", 13, "bold")).pack(anchor=tk.W, pady=(0, 5))
+        ttk.Label(body, text="添加好友后，预约时可自动帮好友确认。",
+                  foreground="gray").pack(anchor=tk.W, pady=(0, 10))
+
+        form = ttk.Frame(body)
+        form.pack(anchor=tk.W)
+
+        ttk.Label(form, text="好友学号:").grid(row=0, column=0, sticky=tk.W, pady=4)
+        self._wiz_friend_sid = tk.StringVar()
+        ttk.Entry(form, textvariable=self._wiz_friend_sid, width=25).grid(row=0, column=1, padx=5, pady=4)
+
+        ttk.Label(form, text="好友密码:").grid(row=1, column=0, sticky=tk.W, pady=4)
+        self._wiz_friend_pwd = tk.StringVar()
+        ttk.Entry(form, textvariable=self._wiz_friend_pwd, width=25, show="*").grid(row=1, column=1, padx=5, pady=4)
+
+        self._wiz_friend_status = ttk.Label(body, text="", foreground="blue")
+        self._wiz_friend_status.pack(anchor=tk.W, pady=5)
+
+        self._wiz_friend_btn = ttk.Button(body, text="查询并添加", command=self._wizard_do_add_friend)
+        self._wiz_friend_btn.pack(anchor=tk.W, pady=5)
+
+        # 显示已有好友
+        friends = self.friend_store.get_all()
+        if friends:
+            ttk.Label(body, text=f"已添加 {len(friends)} 位好友",
+                      foreground="green").pack(anchor=tk.W, pady=(10, 0))
+
+        self._wizard_nav_buttons(body, show_skip=True)
+
+    def _wizard_do_add_friend(self):
+        sid = self._wiz_friend_sid.get().strip()
+        pwd = self._wiz_friend_pwd.get().strip()
+        if not sid or not pwd:
+            self._wiz_friend_status.config(text="请输入学号和密码", foreground="red")
+            return
+
+        self._wiz_friend_btn.config(state=tk.DISABLED)
+        self._wiz_friend_status.config(text="查询中...", foreground="blue")
+
+        def worker():
+            success, uid, name = lookup_uid(
+                username=sid, password=pwd,
+                base_url=self.session_mgr.base_url,
+            )
+            self.root.after(0, self._wizard_on_friend_lookup, success, uid, name, sid, pwd)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _wizard_on_friend_lookup(self, success, uid, name, sid, pwd):
+        self._wiz_friend_btn.config(state=tk.NORMAL)
+        if success:
+            self.friend_store.add(sid, uid, name, pwd)
+            self._wiz_friend_status.config(text=f"添加成功: {name} (UID: {uid})", foreground="green")
+            self._wiz_friend_sid.set("")
+            self._wiz_friend_pwd.set("")
+        else:
+            err = name  # 失败时 name 存放错误信息
+            self._wiz_friend_status.config(text=f"查询失败: {err}", foreground="red")
+
+    # ─── 引导 Step 3: 创建方案 ────────────────────────────────
+
+    def _wizard_step_plans(self):
+        body = self._wizard_body
+
+        ttk.Label(body, text="第 3 步：创建预约方案（可选）",
+                  font=("", 13, "bold")).pack(anchor=tk.W, pady=(0, 5))
+        ttk.Label(body, text="预约方案用于指定房间、座位、时间等信息。\n你也可以稍后在「预约」标签页中添加。",
+                  foreground="gray").pack(anchor=tk.W, pady=(0, 10))
+
+        ttk.Button(body, text="添加方案", command=self._add_plan_dialog).pack(anchor=tk.W, pady=5)
+
+        plans = self.config.get_plans()
+        if plans:
+            ttk.Label(body, text=f"已创建 {len(plans)} 个方案",
+                      foreground="green").pack(anchor=tk.W, pady=(10, 0))
+
+        self._wizard_nav_buttons(body, show_skip=True)
+
+    # ─── 引导 Step 4: 设置调度 ────────────────────────────────
+
+    def _wizard_step_scheduler(self):
+        body = self._wizard_body
+
+        ttk.Label(body, text="第 4 步：设置调度（可选）",
+                  font=("", 13, "bold")).pack(anchor=tk.W, pady=(0, 5))
+        ttk.Label(body, text=(
+            "调度功能可以在指定时间自动执行预约，无需手动操作。\n\n"
+            "调度配置请前往「预约」标签页：\n"
+            "  1. 确保已创建预约方案\n"
+            "  2. 添加按星期或按日期的调度规则\n"
+            "  3. 点击「启动调度」即可"
+        ), foreground="gray", wraplength=500, justify=tk.LEFT).pack(anchor=tk.W, pady=(0, 10))
+
+        ttk.Button(body, text="前往预约页",
+                   command=lambda: self.notebook.select(1)).pack(anchor=tk.W, pady=5)
+
+        self._wizard_nav_buttons(body, show_skip=False, next_text="完成")
+
+    # ─── 日常仪表盘 ───────────────────────────────────────────
+
+    def _show_dashboard(self):
+        """显示日常仪表盘"""
+        # 清空内容区
+        for w in self._home_content.winfo_children():
+            w.destroy()
+
+        # ── 顶部：状态区 ──
+        status_frame = ttk.LabelFrame(self._home_content, text="状态", padding=10)
+        status_frame.pack(fill=tk.X, pady=(0, 8))
+
+        row0 = ttk.Frame(status_frame)
+        row0.pack(fill=tk.X, pady=2)
+        ttk.Label(row0, text="登录状态:", font=("", 10, "bold")).pack(side=tk.LEFT)
+        self._dash_login_label = ttk.Label(row0, text="—", font=("", 10))
+        self._dash_login_label.pack(side=tk.LEFT, padx=(10, 0))
+
+        row1 = ttk.Frame(status_frame)
+        row1.pack(fill=tk.X, pady=2)
+        ttk.Label(row1, text="调度引擎:", font=("", 10, "bold")).pack(side=tk.LEFT)
+        self._dash_engine_label = ttk.Label(row1, text="—", font=("", 10))
+        self._dash_engine_label.pack(side=tk.LEFT, padx=(10, 0))
+
+        # ── 中部：今日预约区 ──
+        bookings_frame = ttk.LabelFrame(self._home_content, text="今日预约", padding=5)
+        bookings_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 8))
+
+        self._dash_bookings_text = tk.Text(
+            bookings_frame, state=tk.DISABLED, wrap=tk.WORD,
+            height=8, font=("Consolas", 9),
+        )
+        self._dash_bookings_text.tag_configure("success", foreground="green")
+        self._dash_bookings_text.tag_configure("error", foreground="red")
+        self._dash_bookings_text.tag_configure("info", foreground="#0066cc")
+
+        sb = ttk.Scrollbar(bookings_frame, orient=tk.VERTICAL, command=self._dash_bookings_text.yview)
+        self._dash_bookings_text.configure(yscrollcommand=sb.set)
+        self._dash_bookings_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        sb.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # ── 底部：快捷操作 ──
+        action_frame = ttk.Frame(self._home_content)
+        action_frame.pack(fill=tk.X)
+        ttk.Button(action_frame, text="获取当前预约",
+                   command=self._fetch_current_bookings).pack(side=tk.LEFT, padx=5)
+        ttk.Button(action_frame, text="启动调度",
+                   command=self._start_scheduler).pack(side=tk.LEFT, padx=5)
+        ttk.Button(action_frame, text="停止调度",
+                   command=self._stop_scheduler).pack(side=tk.LEFT, padx=5)
+
+        # 初始刷新 + 启动定时刷新
+        self._refresh_dashboard()
+
+    def _refresh_dashboard(self):
+        """刷新仪表盘数据（每 5 秒）"""
+        try:
+            if not self._home_content.winfo_exists():
+                return
+
+            # 更新登录状态
+            if self.session_mgr.uid:
+                self._dash_login_label.config(
+                    text=f"已登录: {self.session_mgr.name or self.session_mgr.uid}",
+                    foreground="green",
+                )
+            else:
+                self._dash_login_label.config(text="未登录", foreground="red")
+
+            # 更新引擎状态
+            status = self.engine.get_status()
+            if status["running"]:
+                remaining = status.get("remaining_seconds")
+                trigger = status.get("trigger_time")
+                trigger_str = trigger.strftime("%m-%d %H:%M") if trigger else "—"
+                remaining_str = format_countdown(remaining) if remaining is not None else "—"
+                plans_str = ", ".join(status.get("plan_ids", [])) or "—"
+                self._dash_engine_label.config(
+                    text=f"运行中 | 下次触发: {trigger_str} | 剩余: {remaining_str} | 方案: {plans_str}",
+                    foreground="green",
+                )
+            else:
+                self._dash_engine_label.config(text="未运行", foreground="gray")
+
+            # 更新今日预约（从日志中读取最近记录）
+            self._dash_bookings_text.config(state=tk.NORMAL)
+            self._dash_bookings_text.delete("1.0", tk.END)
+            records = self.history.query(10)
+            if records:
+                for r in records:
+                    result_str = "成功" if r.get("success") else "失败"
+                    tag = "success" if r.get("success") else "error"
+                    ts = r.get("timestamp", "")
+                    plan_id = r.get("plan_id", "")
+                    msg = r.get("message", "")
+                    self._dash_bookings_text.insert(
+                        tk.END, f"[{ts}] {plan_id} — {result_str}: {msg}\n", tag,
+                    )
+            else:
+                self._dash_bookings_text.insert(tk.END, "暂无预约记录", "info")
+            self._dash_bookings_text.config(state=tk.DISABLED)
+
+            # 5 秒后再次刷新
+            self.root.after(5000, self._refresh_dashboard)
+        except tk.TclError:
+            pass  # 控件已销毁
 
     # ─── Tab 2: 好友 ────────────────────────────────────────────
 
