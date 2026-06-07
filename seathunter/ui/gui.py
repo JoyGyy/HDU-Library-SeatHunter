@@ -274,7 +274,11 @@ class GuiApp:
         ttk.Label(checkin_frame, text="bookingId:").pack(anchor=tk.W)
         self._checkin_entry = ttk.Entry(checkin_frame, width=20)
         self._checkin_entry.pack(fill=tk.X, pady=2)
-        ttk.Button(checkin_frame, text="签到", command=self._manual_checkin_from_entry).pack(fill=tk.X)
+
+        checkin_btn_row = ttk.Frame(checkin_frame)
+        checkin_btn_row.pack(fill=tk.X, pady=2)
+        ttk.Button(checkin_btn_row, text="签到", command=self._manual_checkin_from_entry).pack(side=tk.LEFT, fill=tk.X, expand=True)
+        ttk.Button(checkin_btn_row, text="从历史选择", command=self._pick_booking_from_history).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(3, 0))
 
         self._refresh_schedules_tree()
         self._update_status_display()
@@ -969,9 +973,10 @@ class GuiApp:
                 ts = datetime.now().strftime("%H:%M:%S")
 
                 if result.success:
+                    booking_id_info = f" | bookingId: {result.booking_id}" if result.booking_id else ""
                     self.root.after(
                         0, self._append_booking_log,
-                        f"[{ts}] 方案 {plan.id} 预约成功！", "success",
+                        f"[{ts}] 方案 {plan.id} 预约成功！{booking_id_info}", "success",
                     )
                     seats_detail = ", ".join(
                         f"{s.seat_num}(学号:{s.booker_uid})" if s.booker_uid else s.seat_num
@@ -1537,6 +1542,64 @@ class GuiApp:
             self._log(f"自动签到成功: {plan_desc}", "success")
         else:
             self._log(f"自动签到失败: {plan_desc} - {message}", "error")
+
+    def _pick_booking_from_history(self):
+        """从预约历史中选择 bookingId"""
+        records = self.history.query(20)
+        # 过滤出有 bookingId 的记录
+        bookings = [r for r in records if r.get("booking_id")]
+        if not bookings:
+            messagebox.showinfo("提示", "没有找到含 bookingId 的预约记录。\n预约成功后会自动记录 bookingId。")
+            return
+
+        # 弹出选择对话框
+        dialog = tk.Toplevel(self.root)
+        dialog.title("选择预约记录")
+        dialog.geometry("500x300")
+        dialog.resizable(False, False)
+        dialog.transient(self.root)
+        dialog.grab_set()
+        self._center_on_parent(dialog, 500, 300)
+
+        ttk.Label(dialog, text="选择一条预约记录进行签到：").pack(pady=5)
+
+        tree_frame = ttk.Frame(dialog)
+        tree_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+
+        cols = ("time", "booking_id", "seat", "date")
+        tree = ttk.Treeview(tree_frame, columns=cols, show="headings", height=8)
+        for col, text, w in [
+            ("time", "时间", 130), ("booking_id", "bookingId", 120),
+            ("seat", "座位", 80), ("date", "日期", 90),
+        ]:
+            tree.heading(col, text=text)
+            tree.column(col, width=w)
+
+        for r in bookings:
+            tree.insert("", tk.END, values=(
+                r.get("timestamp", ""),
+                r.get("booking_id", ""),
+                r.get("seat_num", ""),
+                r.get("target_date", ""),
+            ))
+
+        sb = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=tree.yview)
+        tree.configure(yscrollcommand=sb.set)
+        tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        sb.pack(side=tk.RIGHT, fill=tk.Y)
+
+        def select():
+            sel = tree.selection()
+            if not sel:
+                messagebox.showinfo("提示", "请先选择一条记录", parent=dialog)
+                return
+            values = tree.item(sel[0], "values")
+            booking_id = values[1]
+            self._checkin_entry.delete(0, tk.END)
+            self._checkin_entry.insert(0, booking_id)
+            dialog.destroy()
+
+        ttk.Button(dialog, text="确定选择", command=select).pack(pady=5)
 
     def _manual_checkin_from_entry(self):
         """从输入框获取 bookingId 并签到"""

@@ -29,6 +29,7 @@ class HistoryLogger:
             "seat_num": result.seat_num,
             "room_name": result.room_name,
             "target_date": result.target_date,
+            "booking_id": result.booking_id,
         }
         with open(self.log_path, "a", encoding="utf-8") as f:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
