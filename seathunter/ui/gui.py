@@ -62,12 +62,21 @@ class GuiApp:
         # UID 记录存储
         self.uid_store = UidStore(get_config_path("uids.json"))
 
+        # 好友存储与服务
+        from seathunter.auth.friend_store import FriendStore
+        from seathunter.services.friend_service import FriendService
+        import os
+        friend_store_path = os.path.join(os.path.dirname(self.config.config_path), "friends.json")
+        self.friend_store = FriendStore(friend_store_path)
+        self.friend_service = FriendService(self.friend_store, base_url=session_manager.base_url)
+
         # Engine callbacks
         self.engine.on_countdown_tick = self._on_countdown_tick
         self.engine.on_booking_result = self._on_booking_result
         self.engine.on_booking_start = self._on_booking_start
         self.engine.on_error = self._on_engine_error
         self.engine.on_checkin_result = self._on_checkin_result
+        self.engine.on_friend_confirm = self._on_friend_confirm
 
         # Threading state
         self._booking_cancel = threading.Event()
@@ -110,25 +119,22 @@ class GuiApp:
         self.notebook = ttk.Notebook(self.root)
         self.notebook.pack(fill=tk.BOTH, expand=True, padx=5, pady=(5, 0))
 
-        self._build_booking_tab()      # Tab 0: 预约
-        self._build_scheduler_tab()    # Tab 1: 调度
-        self._build_tools_tab()        # Tab 2: 工具
+        self._build_home_tab()         # Tab 0: 首页
+        self._build_booking_tab()      # Tab 1: 预约（一体化）
+        self._build_friends_tab()      # Tab 2: 好友
         self._build_settings_tab()     # Tab 3: 设置
-        self._build_help_tab()         # Tab 4: 帮助
 
         self.notebook.bind("<<NotebookTabChanged>>", self._on_tab_changed)
 
     def _on_tab_changed(self, event=None):
         idx = self.notebook.index(self.notebook.select())
-        if idx == 0:
+        if idx == 1:
             self._refresh_plans_tree()
-        elif idx == 1:
-            self._update_status_display()
 
     # ─── Tab 0: 预约 ─────────────────────────────────────────
 
     def _build_booking_tab(self):
-        """Tab 0: 预约 — 合并方案管理和立即抢座"""
+        """Tab 1: 预约（一体化）— 方案管理 + 调度引擎 + 签到 + 预约日志"""
         frame = ttk.Frame(self.notebook, padding=5)
         self.notebook.add(frame, text="预约")
 
@@ -141,7 +147,7 @@ class GuiApp:
 
         columns = ("idx", "plan_id", "room", "floor", "seats", "time", "duration")
         self.plans_tree = ttk.Treeview(
-            tree_frame, columns=columns, show="headings", height=12,
+            tree_frame, columns=columns, show="headings", height=5,
         )
         for col, text, width in [
             ("idx", "序号", 50), ("plan_id", "方案ID", 130),
@@ -163,76 +169,36 @@ class GuiApp:
         ttk.Button(btn_frame, text="删除选中", command=self._delete_selected_plans).pack(side=tk.LEFT, padx=2)
         ttk.Button(btn_frame, text="批量修改时间", command=self._batch_change_time_dialog).pack(side=tk.LEFT, padx=2)
 
-        # ── 下半部分：立即抢座 ──
-        book_frame = ttk.LabelFrame(frame, text="立即抢座", padding=3)
-        book_frame.pack(fill=tk.X, pady=(5, 0))
+        # ── 中部：调度引擎 + 签到（左右分区）──
+        mid_frame = ttk.Frame(frame)
+        mid_frame.pack(fill=tk.X, pady=(5, 0))
 
-        ctrl_frame = ttk.Frame(book_frame)
-        ctrl_frame.pack(fill=tk.X, pady=3)
+        # 左侧：调度引擎
+        sched_frame = ttk.LabelFrame(mid_frame, text="调度引擎", padding=3)
+        sched_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-        self.booking_progress_label = ttk.Label(ctrl_frame, text="")
-        self.booking_progress_label.pack(side=tk.LEFT, padx=5)
+        sched_btn_frame = ttk.Frame(sched_frame)
+        sched_btn_frame.pack(fill=tk.X, pady=(0, 3))
 
-        self.booking_start_btn = ttk.Button(ctrl_frame, text="开始抢座", command=self._start_booking)
-        self.booking_start_btn.pack(side=tk.RIGHT, padx=2)
-        self.booking_stop_btn = ttk.Button(ctrl_frame, text="停止", command=self._cancel_booking, state=tk.DISABLED)
-        self.booking_stop_btn.pack(side=tk.RIGHT, padx=2)
-
-
-
-        log_frame = ttk.LabelFrame(book_frame, text="结果日志", padding=3)
-        log_frame.pack(fill=tk.BOTH, expand=True)
-
-        self.booking_log = tk.Text(log_frame, state=tk.DISABLED, wrap=tk.WORD, height=8, font=("Consolas", 9))
-        self.booking_log.tag_configure("success", foreground="green")
-        self.booking_log.tag_configure("error", foreground="red")
-        self.booking_log.tag_configure("info", foreground="#0066cc")
-        self.booking_log.tag_configure("warning", foreground="#cc6600")
-
-        log_btn_frame = ttk.Frame(log_frame)
-        log_btn_frame.pack(fill=tk.X, pady=(2, 0))
-        ttk.Button(log_btn_frame, text="清空日志", command=self._clear_booking_log).pack(side=tk.RIGHT)
-
-        log_scroll = ttk.Scrollbar(log_frame, orient=tk.VERTICAL, command=self.booking_log.yview)
-        self.booking_log.configure(yscrollcommand=log_scroll.set)
-        self.booking_log.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        log_scroll.pack(side=tk.RIGHT, fill=tk.Y)
-
-        self._refresh_plans_tree()
-
-    # ─── Tab 3: Scheduler ───────────────────────────────────────
-
-    def _build_scheduler_tab(self):
-        """Tab 1: 调度 — 合并调度管理和签到"""
-        frame = ttk.Frame(self.notebook, padding=5)
-        self.notebook.add(frame, text="调度")
-
-        # ── 上半部分：调度管理 ──
-        sched_frame = ttk.LabelFrame(frame, text="调度引擎", padding=3)
-        sched_frame.pack(fill=tk.BOTH, expand=True)
-
-        btn_frame = ttk.Frame(sched_frame)
-        btn_frame.pack(fill=tk.X, pady=(0, 3))
-
-        self.scheduler_start_btn = ttk.Button(btn_frame, text="启动调度", command=self._start_scheduler)
+        self.scheduler_start_btn = ttk.Button(sched_btn_frame, text="启动调度", command=self._start_scheduler)
         self.scheduler_start_btn.pack(side=tk.LEFT, padx=2)
-        self.scheduler_stop_btn = ttk.Button(btn_frame, text="停止调度", command=self._stop_scheduler)
+        self.scheduler_stop_btn = ttk.Button(sched_btn_frame, text="停止调度", command=self._stop_scheduler)
         self.scheduler_stop_btn.pack(side=tk.LEFT, padx=2)
 
-        ttk.Separator(btn_frame, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=8)
-        ttk.Button(btn_frame, text="添加按星期调度", command=self._add_weekday_schedule_dialog).pack(side=tk.LEFT, padx=2)
-        ttk.Button(btn_frame, text="添加按日期调度", command=self._add_date_schedule_dialog).pack(side=tk.LEFT, padx=2)
-        ttk.Button(btn_frame, text="切换启用", command=self._toggle_schedule_enabled).pack(side=tk.LEFT, padx=2)
-        ttk.Button(btn_frame, text="删除选中", command=self._delete_selected_schedules).pack(side=tk.LEFT, padx=2)
+        ttk.Separator(sched_btn_frame, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=8)
+        ttk.Button(sched_btn_frame, text="添加按星期调度", command=self._add_weekday_schedule_dialog).pack(side=tk.LEFT, padx=2)
+        ttk.Button(sched_btn_frame, text="添加按日期调度", command=self._add_date_schedule_dialog).pack(side=tk.LEFT, padx=2)
+        ttk.Button(sched_btn_frame, text="切换启用", command=self._toggle_schedule_enabled).pack(side=tk.LEFT, padx=2)
+        ttk.Button(sched_btn_frame, text="删除选中", command=self._delete_selected_schedules).pack(side=tk.LEFT, padx=2)
 
-        self.scheduler_status_label = tk.Label(btn_frame, text="● 调度未运行", fg="red", font=("", 10))
+        self.scheduler_status_label = tk.Label(sched_btn_frame, text="● 调度未运行", fg="red", font=("", 10))
         self.scheduler_status_label.pack(side=tk.RIGHT, padx=10)
 
-        tree_frame = ttk.Frame(sched_frame)
-        tree_frame.pack(fill=tk.BOTH, expand=True)
+        sched_tree_frame = ttk.Frame(sched_frame)
+        sched_tree_frame.pack(fill=tk.BOTH, expand=True)
 
         cols = ("idx", "type", "target", "status", "plans")
-        self.schedules_tree = ttk.Treeview(tree_frame, columns=cols, show="headings", height=8)
+        self.schedules_tree = ttk.Treeview(sched_tree_frame, columns=cols, show="headings", height=5)
         for col, text, w in [
             ("idx", "序号", 50), ("type", "类型", 80),
             ("target", "目标", 200), ("status", "状态", 60),
@@ -244,17 +210,17 @@ class GuiApp:
         self.schedules_tree.tag_configure("enabled", foreground="black")
         self.schedules_tree.tag_configure("disabled", foreground="gray")
 
-        sb = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=self.schedules_tree.yview)
+        sb = ttk.Scrollbar(sched_tree_frame, orient=tk.VERTICAL, command=self.schedules_tree.yview)
         self.schedules_tree.configure(yscrollcommand=sb.set)
         self.schedules_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         sb.pack(side=tk.RIGHT, fill=tk.Y)
 
-        # ── 下半部分：引擎状态 + 签到 ──
-        bottom_frame = ttk.Frame(frame)
-        bottom_frame.pack(fill=tk.X, pady=(5, 0))
+        # 右侧：引擎状态 + 签到
+        right_frame = ttk.Frame(mid_frame)
+        right_frame.pack(side=tk.RIGHT, fill=tk.Y, padx=(10, 0))
 
-        status_frame = ttk.LabelFrame(bottom_frame, text="引擎状态", padding=5)
-        status_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        status_frame = ttk.LabelFrame(right_frame, text="引擎状态", padding=5)
+        status_frame.pack(fill=tk.X)
 
         self.status_labels = {}
         for i, (key, label_text) in enumerate([
@@ -268,8 +234,8 @@ class GuiApp:
             lbl.grid(row=i, column=1, sticky=tk.W, padx=(10, 0), pady=2)
             self.status_labels[key] = lbl
 
-        checkin_frame = ttk.LabelFrame(bottom_frame, text="手动签到", padding=5)
-        checkin_frame.pack(side=tk.RIGHT, fill=tk.Y, padx=(10, 0))
+        checkin_frame = ttk.LabelFrame(right_frame, text="手动签到", padding=5)
+        checkin_frame.pack(fill=tk.X, pady=(5, 0))
 
         ttk.Label(checkin_frame, text="bookingId:").pack(anchor=tk.W)
         self._checkin_entry = ttk.Entry(checkin_frame, width=20)
@@ -284,86 +250,58 @@ class GuiApp:
         checkin_btn_row2.pack(fill=tk.X, pady=(2, 0))
         ttk.Button(checkin_btn_row2, text="获取当前预约", command=self._fetch_current_bookings).pack(fill=tk.X)
 
-        # 签到结果标签
         self._checkin_result_label = ttk.Label(checkin_frame, text="", foreground="gray", wraplength=150)
         self._checkin_result_label.pack(fill=tk.X, pady=(5, 0))
 
+        # ── 底部：预约日志 ──
+        log_frame = ttk.LabelFrame(frame, text="预约日志", padding=3)
+        log_frame.pack(fill=tk.BOTH, expand=True, pady=(5, 0))
+
+        self.booking_log = tk.Text(log_frame, state=tk.DISABLED, wrap=tk.WORD, height=6, font=("Consolas", 9))
+        self.booking_log.tag_configure("success", foreground="green")
+        self.booking_log.tag_configure("error", foreground="red")
+        self.booking_log.tag_configure("info", foreground="#0066cc")
+        self.booking_log.tag_configure("warning", foreground="#cc6600")
+
+        log_btn_frame = ttk.Frame(log_frame)
+        log_btn_frame.pack(fill=tk.X, pady=(2, 0))
+        ttk.Button(log_btn_frame, text="清空日志", command=self._clear_booking_log).pack(side=tk.RIGHT)
+        self.booking_progress_label = ttk.Label(log_btn_frame, text="")
+        self.booking_progress_label.pack(side=tk.LEFT, padx=5)
+        self.booking_start_btn = ttk.Button(log_btn_frame, text="开始抢座", command=self._start_booking)
+        self.booking_start_btn.pack(side=tk.RIGHT, padx=2)
+        self.booking_stop_btn = ttk.Button(log_btn_frame, text="停止", command=self._cancel_booking, state=tk.DISABLED)
+        self.booking_stop_btn.pack(side=tk.RIGHT, padx=2)
+
+        log_scroll = ttk.Scrollbar(log_frame, orient=tk.VERTICAL, command=self.booking_log.yview)
+        self.booking_log.configure(yscrollcommand=log_scroll.set)
+        self.booking_log.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        log_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+
+        self._refresh_plans_tree()
         self._refresh_schedules_tree()
         self._update_status_display()
 
-    # ─── Tab 2: 工具 ──────────────────────────────────────────
+    # ─── Tab 0: 首页（占位）──────────────────────────────────────
 
-    def _build_tools_tab(self):
-        """Tab 2: 工具 — UID 管理 + 预约历史"""
+    def _build_home_tab(self):
+        """Tab 0: 首页 — 占位，后续 Task 6 实现"""
         frame = ttk.Frame(self.notebook, padding=5)
-        self.notebook.add(frame, text="工具")
+        self.notebook.add(frame, text="首页")
+        ttk.Label(frame, text="首页（待实现）", font=("", 12)).pack(pady=20)
 
-        # ── 上半部分：UID 管理 ──
-        uid_frame = ttk.LabelFrame(frame, text="UID 管理", padding=5)
-        uid_frame.pack(fill=tk.BOTH, expand=True)
+    # ─── Tab 2: 好友（占位）──────────────────────────────────────
 
-        user_row = ttk.Frame(uid_frame)
-        user_row.pack(fill=tk.X, pady=(0, 5))
-        self.user_info_labels = {}
-        for key, label_text in [("uid", "UID"), ("name", "姓名")]:
-            ttk.Label(user_row, text=f"{label_text}:", font=("", 9, "bold")).pack(side=tk.LEFT, padx=(0, 5))
-            lbl = ttk.Label(user_row, text="—", font=("", 9))
-            lbl.pack(side=tk.LEFT, padx=(0, 15))
-            self.user_info_labels[key] = lbl
+    def _build_friends_tab(self):
+        """Tab 2: 好友 — 占位，后续 Task 5 实现"""
+        frame = ttk.Frame(self.notebook, padding=5)
+        self.notebook.add(frame, text="好友")
+        ttk.Label(frame, text="好友管理（待实现）", font=("", 12)).pack(pady=20)
 
-        ttk.Button(user_row, text="查询他人UID", command=self._lookup_uid_dialog).pack(side=tk.RIGHT)
-
-        uid_tree_frame = ttk.Frame(uid_frame)
-        uid_tree_frame.pack(fill=tk.BOTH, expand=True)
-
-        cols = ("student_id", "uid", "name")
-        self.uid_tree = ttk.Treeview(uid_tree_frame, columns=cols, show="headings", height=5)
-        for col, text, w in [("student_id", "学号", 120), ("uid", "UID", 120), ("name", "姓名", 120)]:
-            self.uid_tree.heading(col, text=text)
-            self.uid_tree.column(col, width=w, anchor=tk.CENTER)
-        self.uid_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-
-        uid_sb = ttk.Scrollbar(uid_tree_frame, orient=tk.VERTICAL, command=self.uid_tree.yview)
-        self.uid_tree.configure(yscrollcommand=uid_sb.set)
-        uid_sb.pack(side=tk.RIGHT, fill=tk.Y)
-
-        uid_btn_frame = ttk.Frame(uid_frame)
-        uid_btn_frame.pack(fill=tk.X, pady=(3, 0))
-        ttk.Button(uid_btn_frame, text="删除选中记录", command=self._delete_selected_uid).pack(side=tk.LEFT)
-
-        # ── 下半部分：预约历史 ──
-        history_frame = ttk.LabelFrame(frame, text="预约历史", padding=5)
-        history_frame.pack(fill=tk.BOTH, expand=True, pady=(5, 0))
-
-        hist_tree_frame = ttk.Frame(history_frame)
-        hist_tree_frame.pack(fill=tk.BOTH, expand=True)
-
-        cols = ("time", "plan_id", "seat", "date", "result", "message")
-        self.history_tree = ttk.Treeview(hist_tree_frame, columns=cols, show="headings", height=6)
-        for col, text, w in [
-            ("time", "时间", 130), ("plan_id", "方案ID", 100),
-            ("seat", "座位", 80), ("date", "日期", 90),
-            ("result", "结果", 60), ("message", "消息", 200),
-        ]:
-            self.history_tree.heading(col, text=text)
-            self.history_tree.column(col, width=w, anchor=tk.CENTER if col in ("time", "date", "result") else tk.W)
-
-        hist_sb = ttk.Scrollbar(hist_tree_frame, orient=tk.VERTICAL, command=self.history_tree.yview)
-        self.history_tree.configure(yscrollcommand=hist_sb.set)
-        self.history_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        hist_sb.pack(side=tk.RIGHT, fill=tk.Y)
-
-        hist_btn_frame = ttk.Frame(history_frame)
-        hist_btn_frame.pack(fill=tk.X, pady=(3, 0))
-        ttk.Button(hist_btn_frame, text="清空历史", command=self._clear_history).pack(side=tk.LEFT)
-
-        self._refresh_uid_tree()
-        self._refresh_history_tree()
-
-    # ─── Tab 5: Settings ────────────────────────────────────────
+    # ─── Tab 3: 设置 ────────────────────────────────────────────
 
     def _build_settings_tab(self):
-        """Tab 3: 设置"""
+        """Tab 3: 设置 — 账号 + 请求参数 + 帮助"""
         frame = ttk.Frame(self.notebook, padding=20)
         self.notebook.add(frame, text="设置")
 
@@ -398,26 +336,23 @@ class GuiApp:
         self.max_try_entry = ttk.Spinbox(s_frame, from_=1, to=999, textvariable=self.max_try_var, width=10)
         self.max_try_entry.grid(row=1, column=1, padx=10, pady=8)
 
-        ttk.Button(frame, text="保存设置", command=self._save_settings).pack(pady=20)
+        ttk.Button(frame, text="保存设置", command=self._save_settings).pack(pady=10)
+
+        # 帮助
+        help_frame = ttk.LabelFrame(frame, text="帮助", padding=5)
+        help_frame.pack(fill=tk.BOTH, expand=True, pady=(5, 0))
+        help_text = tk.Text(help_frame, wrap=tk.WORD, state=tk.DISABLED, height=8)
+        help_text.pack(fill=tk.BOTH, expand=True)
+        help_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "docs", "help.md")
+        if os.path.exists(help_path):
+            with open(help_path, "r", encoding="utf-8") as f:
+                content = f.read()
+            help_text.config(state=tk.NORMAL)
+            help_text.insert(tk.END, content)
+            help_text.config(state=tk.DISABLED)
 
         self._load_settings()
         self._update_account_display()
-
-    # ─── Tab 6: Help ────────────────────────────────────────────
-
-    def _build_help_tab(self):
-        frame = ttk.Frame(self.notebook, padding=5)
-        self.notebook.add(frame, text="帮助")
-
-        self.help_text = tk.Text(
-            frame, state=tk.DISABLED, wrap=tk.WORD, font=("", 10),
-        )
-        help_scroll = ttk.Scrollbar(frame, orient=tk.VERTICAL, command=self.help_text.yview)
-        self.help_text.configure(yscrollcommand=help_scroll.set)
-        self.help_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        help_scroll.pack(side=tk.RIGHT, fill=tk.Y)
-
-        self._load_help()
 
     # ================================================================
     # Login
@@ -1474,26 +1409,27 @@ class GuiApp:
         self._show_login_dialog()
 
     # ================================================================
-    # Help
-    # ================================================================
-
-    def _load_help(self):
-        help_path = os.path.join(get_app_dir(), "docs", "help.md")
-        content = ""
-        if os.path.exists(help_path):
-            with open(help_path, "r", encoding="utf-8") as f:
-                content = f.read()
-        else:
-            content = "帮助文档未找到"
-
-        self.help_text.configure(state=tk.NORMAL)
-        self.help_text.delete("1.0", tk.END)
-        self.help_text.insert(tk.END, content)
-        self.help_text.configure(state=tk.DISABLED)
-
-    # ================================================================
     # Engine Callbacks (called from engine thread)
     # ================================================================
+
+    def _on_friend_confirm(self, booking_id: str, friend_uid: str):
+        """好友确认回调（从 engine 线程调用）"""
+        friend_sid = None
+        for sid, info in self.friend_store.get_all().items():
+            if info.get("uid") == friend_uid:
+                friend_sid = sid
+                break
+        if not friend_sid:
+            self._log(f"未找到 UID={friend_uid} 对应的好友，跳过自动确认", "warning")
+            return
+        self._log(f"正在用好友 {friend_sid} 账号确认预约...", "info")
+        def _do():
+            ok, msg = self.friend_service.auto_confirm(booking_id, friend_sid)
+            if ok:
+                self._log(f"好友 {friend_sid} 确认预约成功", "success")
+            else:
+                self._log(f"好友 {friend_sid} 确认失败: {msg}", "warning")
+        threading.Thread(target=_do, daemon=True).start()
 
     def _on_countdown_tick(self, remaining, trigger_time, plan_desc):
         try:
