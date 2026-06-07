@@ -280,6 +280,10 @@ class GuiApp:
         ttk.Button(checkin_btn_row, text="签到", command=self._manual_checkin_from_entry).pack(side=tk.LEFT, fill=tk.X, expand=True)
         ttk.Button(checkin_btn_row, text="从历史选择", command=self._pick_booking_from_history).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(3, 0))
 
+        checkin_btn_row2 = ttk.Frame(checkin_frame)
+        checkin_btn_row2.pack(fill=tk.X, pady=(2, 0))
+        ttk.Button(checkin_btn_row2, text="获取当前预约", command=self._fetch_current_bookings).pack(fill=tk.X)
+
         # 签到结果标签
         self._checkin_result_label = ttk.Label(checkin_frame, text="", foreground="gray", wraplength=150)
         self._checkin_result_label.pack(fill=tk.X, pady=(5, 0))
@@ -1611,6 +1615,81 @@ class GuiApp:
             booking_id = values[1]
             self._checkin_entry.delete(0, tk.END)
             self._checkin_entry.insert(0, booking_id)
+            dialog.destroy()
+
+        ttk.Button(dialog, text="确定选择", command=select).pack(pady=5)
+
+    def _fetch_current_bookings(self):
+        """从服务器获取当前预约列表"""
+        if not self.session_mgr.is_logged_in:
+            messagebox.showwarning("提示", "请先登录")
+            return
+
+        self._log("正在获取当前预约...", "info")
+
+        def _do():
+            bookings = self.session_mgr.api_client.get_my_bookings()
+            self.root.after(0, lambda: self._show_bookings_dialog(bookings))
+
+        threading.Thread(target=_do, daemon=True).start()
+
+    def _show_bookings_dialog(self, bookings):
+        """显示当前预约列表供选择"""
+        if not bookings:
+            messagebox.showinfo("提示", "没有找到当前预约。\n可能还没有预约，或预约已过期。")
+            return
+
+        dialog = tk.Toplevel(self.root)
+        dialog.title("当前预约")
+        dialog.geometry("580x320")
+        dialog.resizable(False, False)
+        dialog.transient(self.root)
+        dialog.grab_set()
+        self._center_on_parent(dialog, 580, 320)
+
+        ttk.Label(dialog, text="选择一条预约进行签到：").pack(pady=5)
+
+        tree_frame = ttk.Frame(dialog)
+        tree_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+
+        cols = ("bid", "seat", "begin", "end", "status")
+        tree = ttk.Treeview(tree_frame, columns=cols, show="headings", height=8)
+        for col, text, w in [
+            ("bid", "bookingId", 100), ("seat", "座位", 120),
+            ("begin", "开始时间", 110), ("end", "结束时间", 110),
+            ("status", "状态", 80),
+        ]:
+            tree.heading(col, text=text)
+            tree.column(col, width=w)
+
+        for b in bookings:
+            bid = b.get("bookingId", b.get("id", ""))
+            seat = b.get("devName", b.get("seatName", ""))
+            begin = b.get("beginTime", "")
+            end = b.get("endTime", "")
+            status = b.get("status", b.get("statusName", ""))
+            # 格式化时间戳
+            if isinstance(begin, (int, float)) and begin > 1e9:
+                begin = datetime.fromtimestamp(begin).strftime("%m-%d %H:%M")
+            if isinstance(end, (int, float)) and end > 1e9:
+                end = datetime.fromtimestamp(end).strftime("%m-%d %H:%M")
+            tree.insert("", tk.END, values=(bid, seat, begin, end, status))
+
+        sb = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=tree.yview)
+        tree.configure(yscrollcommand=sb.set)
+        tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        sb.pack(side=tk.RIGHT, fill=tk.Y)
+
+        def select():
+            sel = tree.selection()
+            if not sel:
+                messagebox.showinfo("提示", "请先选择一条预约", parent=dialog)
+                return
+            values = tree.item(sel[0], "values")
+            booking_id = values[0]
+            self._checkin_entry.delete(0, tk.END)
+            self._checkin_entry.insert(0, booking_id)
+            self._log(f"已选择 bookingId: {booking_id}", "info")
             dialog.destroy()
 
         ttk.Button(dialog, text="确定选择", command=select).pack(pady=5)

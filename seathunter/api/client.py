@@ -150,6 +150,27 @@ class ApiClient:
             logger.error("签到请求异常: %s", e)
             return (False, str(e), booking_id)
 
+    def get_my_bookings(self) -> List[Dict[str, Any]]:
+        """获取当前用户的预约列表
+
+        Returns:
+            预约列表，每项包含 bookingId, devName, beginTime, endTime, status 等
+        """
+        url = self.base_url + "/Seat/Index/myBookingList"
+        params = {"LAB_JSON": "1"}
+        try:
+            resp = self.session.get(url=url, params=params, timeout=30)
+            data = resp.json()
+            if data.get("CODE") == "ok":
+                bookings = data.get("DATA", {}).get("bookingList", [])
+                logger.info("获取预约列表成功，共 %d 条", len(bookings))
+                return bookings
+            logger.warning("获取预约列表失败: %s", data.get("MESSAGE", ""))
+            return []
+        except Exception as e:
+            logger.error("获取预约列表异常: %s", e)
+            return []
+
     def get_booking_status(self, booking_id: str) -> dict:
         """查询预约状态
 
