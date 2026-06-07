@@ -1667,18 +1667,17 @@ class GuiApp:
             tree.heading(col, text=text)
             tree.column(col, width=w)
 
+        status_map = {"0": "待签到", "1": "已签到", "2": "已结束"}
         for b in bookings:
-            bid = b.get("bookingId", b.get("id", ""))
-            seat = b.get("devName", b.get("seatName", ""))
-            begin = b.get("beginTime", "")
-            end = b.get("endTime", "")
-            status = b.get("status", b.get("statusName", ""))
-            # 格式化时间戳
-            if isinstance(begin, (int, float)) and begin > 1e9:
-                begin = datetime.fromtimestamp(begin).strftime("%m-%d %H:%M")
-            if isinstance(end, (int, float)) and end > 1e9:
-                end = datetime.fromtimestamp(end).strftime("%m-%d %H:%M")
-            tree.insert("", tk.END, values=(bid, seat, begin, end, status))
+            bid = b.get("bookingId", "")
+            seat = f"{b.get('roomName', '')}-{b.get('seatNum', '')}"
+            begin = b.get("beginTime")
+            end = b.get("endTime")
+            st = str(b.get("status", ""))
+            status_text = status_map.get(st, st)
+            begin_str = begin.strftime("%m-%d %H:%M") if begin else "—"
+            end_str = end.strftime("%H:%M") if end else "—"
+            tree.insert("", tk.END, values=(bid, seat, begin_str, end_str, status_text))
 
         sb = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=tree.yview)
         tree.configure(yscrollcommand=sb.set)

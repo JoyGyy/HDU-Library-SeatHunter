@@ -156,42 +156,52 @@ class ApiClient:
         """获取当前用户的预约列表
 
         Returns:
-            预约列表，每项包含 bookingId, devName, beginTime, endTime, status 等
+            预约列表，每项标准化为:
+            - bookingId: str
+            - roomName: str
+            - seatNum: str
+            - beginTime: datetime
+            - endTime: datetime
+            - status: str ("0"=待签到, "1"=已签到, "2"=已结束)
         """
         url = self.base_url + "/Seat/Index/myBookingList"
-        params = {"LAB_JSON": "1"}
         try:
-            # 同时尝试 GET 和 POST
-            resp = self.session.get(url=url, params=params, timeout=30)
-            if resp.status_code != 200:
-                resp = self.session.post(url=url, params=params, timeout=30)
+            resp = self.session.get(url=url, timeout=30)
             if resp.status_code != 200:
                 logger.warning("获取预约列表 HTTP %d", resp.status_code)
                 return []
             data = resp.json()
-            logger.info("myBookingList 响应: CODE=%s, DATA keys=%s",
-                       data.get("CODE"),
-                       list(data.get("DATA", {}).keys()) if isinstance(data.get("DATA"), dict) else type(data.get("DATA")).__name__)
-            if data.get("CODE") == "ok":
-                inner = data.get("DATA", {})
-                if isinstance(inner, list):
-                    bookings = inner
-                elif isinstance(inner, dict):
-                    # 尝试各种可能的 key 名
-                    for key in ["bookingList", "list", "items", "data",
-                                "records", "rows", "bookingList", "reservations"]:
-                        if key in inner and isinstance(inner[key], list):
-                            bookings = inner[key]
-                            break
-                    else:
-                        # 如果 DATA 本身就是预约数据（没有子列表）
-                        bookings = [inner] if inner.get("bookingId") else []
-                else:
-                    bookings = []
-                logger.info("获取预约列表成功，共 %d 条", len(bookings))
-                return bookings
-            logger.warning("获取预约列表失败: %s", data.get("MESSAGE", ""))
-            return []
+
+            # 响应格式: {content: {defaultItems: [...]}}
+            items = []
+            content = data.get("content", {})
+            if isinstance(content, dict):
+                items = content.get("defaultItems", [])
+            if not items:
+                logger.info("预约列表为空")
+                return []
+
+            # 标准化字段
+            result = []
+            for item in items:
+                try:
+                    ts = int(item.get("time", 0))
+                    dur = int(item.get("duration", 0))
+                    begin = datetime.fromtimestamp(ts) if ts > 1e9 else None
+                    end = datetime.fromtimestamp(ts + dur) if ts > 1e9 and dur > 0 else None
+                    result.append({
+                        "bookingId": str(item.get("id", "")),
+                        "roomName": item.get("roomName", ""),
+                        "seatNum": item.get("seatNum", ""),
+                        "beginTime": begin,
+                        "endTime": end,
+                        "status": item.get("status", ""),
+                    })
+                except Exception as e:
+                    logger.warning("解析预约项失败: %s, error=%s", item, e)
+
+            logger.info("获取预约列表成功，共 %d 条", len(result))
+            return result
         except Exception as e:
             logger.error("获取预约列表异常: %s", e)
             return []
