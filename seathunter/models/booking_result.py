@@ -16,6 +16,7 @@ class BookingResult:
     seat_num: Optional[str] = None
     room_name: Optional[str] = None
     target_date: Optional[str] = None
+    booking_id: Optional[str] = None  # 新增：预约成功后的 bookingId
 
     def __str__(self) -> str:
         status = "成功" if self.success else "失败"
@@ -26,6 +27,8 @@ class BookingResult:
             parts.append(f"座位: {self.room_name}-{self.seat_num}")
         if self.target_date:
             parts.append(f"日期: {self.target_date}")
+        if self.booking_id:
+            parts.append(f"bookingId: {self.booking_id}")
         parts.append(self.message)
         return " | ".join(parts)
 
@@ -34,6 +37,10 @@ class BookingResult:
                           room_name: str = None, target_date: str = None) -> "BookingResult":
         code = resp.get("CODE", "unknown")
         message = resp.get("MESSAGE", "")
+        data = resp.get("DATA", {})
+        booking_id = None
+        if code == "ok" and isinstance(data, dict):
+            booking_id = data.get("bookingId")
         return cls(
             success=(code == "ok"),
             code=code,
@@ -42,4 +49,5 @@ class BookingResult:
             seat_num=seat_num,
             room_name=room_name,
             target_date=target_date,
+            booking_id=booking_id,
         )
