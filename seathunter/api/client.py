@@ -120,3 +120,50 @@ class ApiClient:
                                      floor_name: str) -> List[Dict]:
         """Get seats for a specific room and floor."""
         return rooms[room_name]["floors"][floor_name]["seats"]
+
+    def check_in(self, booking_id: str) -> tuple:
+        """签到
+
+        Args:
+            booking_id: 预约 ID
+
+        Returns:
+            (成功?, 错误信息, booking_id)
+        """
+        url = self.base_url + "/Seat/Index/checkIn"
+        params = {"bookingId": booking_id, "LAB_JSON": "1"}
+        try:
+            resp = self.session.post(url=url, params=params, timeout=30)
+            data = resp.json()
+            if data.get("CODE") == "ok":
+                result = data.get("DATA", {}).get("result", "")
+                if result == "success":
+                    logger.info("签到成功: bookingId=%s", booking_id)
+                    return (True, "", booking_id)
+                msg = data.get("DATA", {}).get("msg", "签到失败")
+                logger.warning("签到失败: %s", msg)
+                return (False, msg, booking_id)
+            msg = data.get("MESSAGE", "签到失败")
+            logger.warning("签到失败: %s", msg)
+            return (False, msg, booking_id)
+        except Exception as e:
+            logger.error("签到请求异常: %s", e)
+            return (False, str(e), booking_id)
+
+    def get_booking_status(self, booking_id: str) -> dict:
+        """查询预约状态
+
+        Args:
+            booking_id: 预约 ID
+
+        Returns:
+            API 响应 dict
+        """
+        url = self.base_url + "/Seat/Index/bookingStatus"
+        params = {"bookingId": booking_id, "LAB_JSON": "1"}
+        try:
+            resp = self.session.post(url=url, params=params, timeout=30)
+            return resp.json()
+        except Exception as e:
+            logger.error("查询预约状态异常: %s", e)
+            return {"CODE": "error", "MESSAGE": str(e)}
