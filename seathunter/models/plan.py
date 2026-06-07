@@ -43,6 +43,7 @@ class Plan:
     duration_hours: int
     seats: List[SeatInfo] = field(default_factory=list)
     target_date: str = ""  # YYYY-MM-DD format, empty means use schedule date or today
+    booking_id: str = ""   # 新增：预约成功后的 bookingId，用于签到
 
     # Populated at execution time by the engine
     _room_data: Optional[Dict] = field(default=None, repr=False)
@@ -65,6 +66,8 @@ class Plan:
         }
         if self.target_date:
             d["target_date"] = self.target_date
+        if self.booking_id:
+            d["booking_id"] = self.booking_id
         return d
 
     @classmethod
@@ -78,6 +81,7 @@ class Plan:
             duration_hours=int(data["duration_hours"]),
             seats=seats,
             target_date=data.get("target_date", ""),
+            booking_id=data.get("booking_id", ""),
         )
 
     def validate(self, room_data: Optional[Dict] = None) -> List[str]:
