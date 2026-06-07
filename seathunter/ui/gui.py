@@ -67,6 +67,7 @@ class GuiApp:
         self.engine.on_booking_result = self._on_booking_result
         self.engine.on_booking_start = self._on_booking_start
         self.engine.on_error = self._on_engine_error
+        self.engine.on_checkin_result = self._on_checkin_result
 
         # Threading state
         self._booking_cancel = threading.Event()
@@ -207,6 +208,9 @@ class GuiApp:
             ctrl_frame, text="停止", command=self._cancel_booking, state=tk.DISABLED,
         )
         self.booking_stop_btn.pack(side=tk.RIGHT, padx=2)
+
+        self._checkin_btn = ttk.Button(ctrl_frame, text="手动签到", command=self._manual_checkin)
+        self._checkin_btn.pack(side=tk.LEFT, padx=5)
 
         # Log area
         log_frame = ttk.LabelFrame(frame, text="结果日志", padding=3)
@@ -1088,6 +1092,7 @@ class GuiApp:
             return
 
         self.engine.start()
+        self.runner.set_checkin_registry(self.engine.register_checkin)
         self.scheduler_status_label.config(text="● 调度运行中", fg="green")
         self.status_bar.config(text="调度引擎已启动")
         self._schedule_status_refresh()
@@ -1488,6 +1493,48 @@ class GuiApp:
             self.root.after(0, self._append_booking_log, msg, "error")
         except RuntimeError:
             pass
+
+    def _on_checkin_result(self, success, message, plan_desc):
+        """签到结果回调"""
+        if success:
+            self._log(f"自动签到成功: {plan_desc}")
+        else:
+            self._log(f"自动签到失败: {plan_desc} - {message}")
+
+    def _manual_checkin(self):
+        """手动签到"""
+        if not self.session_mgr.is_logged_in:
+            messagebox.showwarning("提示", "请先登录")
+            return
+
+        # 弹出输入框
+        dialog = tk.Toplevel(self.root)
+        dialog.title("手动签到")
+        dialog.geometry("400x150")
+        dialog.resizable(False, False)
+        dialog.transient(self.root)
+        dialog.grab_set()
+
+        ttk.Label(dialog, text="请输入 bookingId:").pack(pady=10)
+        entry = ttk.Entry(dialog, width=40)
+        entry.pack(pady=5)
+
+        def do_checkin():
+            booking_id = entry.get().strip()
+            if not booking_id:
+                messagebox.showwarning("提示", "bookingId 不能为空", parent=dialog)
+                return
+            dialog.destroy()
+            self._log(f"正在签到 (bookingId={booking_id})...")
+            success, msg, _ = self.session_mgr.api_client.check_in(booking_id)
+            if success:
+                self._log("签到成功！")
+                messagebox.showinfo("成功", "签到成功！")
+            else:
+                self._log(f"签到失败: {msg}")
+                messagebox.showerror("失败", f"签到失败: {msg}")
+
+        ttk.Button(dialog, text="签到", command=do_checkin).pack(pady=10)
 
     # ================================================================
     # Utilities
