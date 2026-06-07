@@ -59,3 +59,17 @@ class UidStore:
         """获取所有记录。"""
         self.load()
         return dict(self._data)
+
+    def remove(self, student_id: str) -> bool:
+        """删除一条 UID 记录。
+
+        Returns:
+            是否成功删除
+        """
+        self.load()
+        if student_id in self._data:
+            del self._data[student_id]
+            self.save()
+            logger.info("UID 记录已删除: %s", student_id)
+            return True
+        return False

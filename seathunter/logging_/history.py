@@ -61,3 +61,8 @@ class HistoryLogger:
                     continue
 
         return entries[-limit:][::-1]  # Most recent first
+
+    def clear(self):
+        """清空历史记录文件。"""
+        with open(self.log_path, "w", encoding="utf-8") as f:
+            pass
