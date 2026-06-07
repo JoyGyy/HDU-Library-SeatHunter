@@ -161,13 +161,33 @@ class ApiClient:
         url = self.base_url + "/Seat/Index/myBookingList"
         params = {"LAB_JSON": "1"}
         try:
+            # 同时尝试 GET 和 POST
             resp = self.session.get(url=url, params=params, timeout=30)
+            if resp.status_code != 200:
+                resp = self.session.post(url=url, params=params, timeout=30)
             if resp.status_code != 200:
                 logger.warning("获取预约列表 HTTP %d", resp.status_code)
                 return []
             data = resp.json()
+            logger.info("myBookingList 响应: CODE=%s, DATA keys=%s",
+                       data.get("CODE"),
+                       list(data.get("DATA", {}).keys()) if isinstance(data.get("DATA"), dict) else type(data.get("DATA")).__name__)
             if data.get("CODE") == "ok":
-                bookings = data.get("DATA", {}).get("bookingList", [])
+                inner = data.get("DATA", {})
+                if isinstance(inner, list):
+                    bookings = inner
+                elif isinstance(inner, dict):
+                    # 尝试各种可能的 key 名
+                    for key in ["bookingList", "list", "items", "data",
+                                "records", "rows", "bookingList", "reservations"]:
+                        if key in inner and isinstance(inner[key], list):
+                            bookings = inner[key]
+                            break
+                    else:
+                        # 如果 DATA 本身就是预约数据（没有子列表）
+                        bookings = [inner] if inner.get("bookingId") else []
+                else:
+                    bookings = []
                 logger.info("获取预约列表成功，共 %d 条", len(bookings))
                 return bookings
             logger.warning("获取预约列表失败: %s", data.get("MESSAGE", ""))

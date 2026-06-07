@@ -1626,9 +1626,14 @@ class GuiApp:
             return
 
         self._log("正在获取当前预约...", "info")
+        self._checkin_result_label.config(text="获取中...", foreground="gray")
 
         def _do():
             bookings = self.api.get_my_bookings()
+            if bookings:
+                self._log(f"获取到 {len(bookings)} 条预约", "success")
+            else:
+                self._log("未获取到预约，可查看日志了解详情", "error")
             self.root.after(0, lambda: self._show_bookings_dialog(bookings))
 
         threading.Thread(target=_do, daemon=True).start()
