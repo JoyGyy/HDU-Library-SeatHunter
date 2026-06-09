@@ -31,6 +31,20 @@ from seathunter.logging_.history import HistoryLogger
 
 logger = logging.getLogger("seathunter.ui")
 
+# ── 深色主题配色 ──
+BG = "#1e1e2e"
+SURFACE = "#313244"
+BORDER = "#45475a"
+TEXT = "#cdd6f4"
+TEXT_DIM = "#a6adc8"
+BLUE = "#89b4fa"
+GREEN = "#a6e3a1"
+RED = "#f38ba8"
+YELLOW = "#f9e2af"
+SELECT_BG = "#45475a"
+FONT_FAMILY = "SF Pro Text"
+MONO_FONT = "Menlo"
+
 
 class GuiApp:
     """tkinter GUI main application for SeatHunter."""
@@ -39,6 +53,7 @@ class GuiApp:
                  session_manager: SessionManager, api_client: ApiClient,
                  room_cache: RoomCache):
         self.root = root
+        self._setup_style()
         self.config = config_manager
         self.session_mgr = session_manager
         self.api = api_client
@@ -98,16 +113,60 @@ class GuiApp:
     # GUI Building
     # ================================================================
 
+    def _setup_style(self):
+        style = ttk.Style()
+        style.theme_use("clam")
+        style.configure(".", background=BG, foreground=TEXT,
+                         fieldbackground=SURFACE, bordercolor=BORDER,
+                         font=(FONT_FAMILY, 10))
+        style.configure("TFrame", background=BG)
+        style.configure("TLabel", background=BG, foreground=TEXT)
+        style.configure("TLabelFrame", background=BG, foreground=BLUE, bordercolor=BORDER)
+        style.configure("TLabelFrame.Label", background=BG, foreground=BLUE,
+                         font=(FONT_FAMILY, 10, "bold"))
+        style.configure("TButton", background=BORDER, foreground=TEXT,
+                         bordercolor=BORDER, padding=(8, 4))
+        style.map("TButton", background=[("active", BLUE), ("pressed", BLUE)],
+                  foreground=[("active", BG), ("pressed", BG)])
+        style.configure("TEntry", fieldbackground=SURFACE, foreground=TEXT,
+                         insertcolor=TEXT, bordercolor=BORDER)
+        style.configure("TSpinbox", fieldbackground=SURFACE, foreground=TEXT,
+                         arrowcolor=TEXT, bordercolor=BORDER)
+        style.configure("TCombobox", fieldbackground=SURFACE, foreground=TEXT,
+                         arrowcolor=TEXT, bordercolor=BORDER)
+        style.map("TCombobox", fieldbackground=[("readonly", SURFACE)],
+                  foreground=[("readonly", TEXT)])
+        style.configure("TNotebook", background=BG, bordercolor=BORDER)
+        style.configure("TNotebook.Tab", background=BG, foreground=TEXT_DIM, padding=(12, 6))
+        style.map("TNotebook.Tab", background=[("selected", SURFACE)],
+                  foreground=[("selected", BLUE)])
+        style.configure("Treeview", background=SURFACE, foreground=TEXT,
+                         fieldbackground=SURFACE, bordercolor=BORDER,
+                         rowheight=28, font=(FONT_FAMILY, 10))
+        style.configure("Treeview.Heading", background=BORDER, foreground=TEXT,
+                         font=(FONT_FAMILY, 10, "bold"))
+        style.map("Treeview", background=[("selected", SELECT_BG)],
+                  foreground=[("selected", TEXT)])
+        style.configure("TScrollbar", background=SURFACE, troughcolor=BG,
+                         bordercolor=BORDER, arrowcolor=TEXT_DIM)
+        style.configure("TSeparator", background=BORDER)
+        style.configure("TProgressbar", background=BLUE, troughcolor=SURFACE, bordercolor=BORDER)
+        style.configure("TCheckbutton", background=BG, foreground=TEXT)
+        style.map("TCheckbutton", background=[("active", BG)])
+        style.configure("TRadiobutton", background=BG, foreground=TEXT)
+        style.map("TRadiobutton", background=[("active", BG)])
+        self.root.configure(bg=BG)
+
     def _build_main_window(self):
         self.root.title("SeatHunter v2.0")
-        self.root.geometry("900x650")
-        self.root.minsize(800, 550)
+        self.root.geometry("1200x800")
+        self.root.minsize(1000, 700)
         self.root.update_idletasks()
         sw = self.root.winfo_screenwidth()
         sh = self.root.winfo_screenheight()
-        x = (sw - 900) // 2
-        y = (sh - 650) // 2
-        self.root.geometry(f"900x650+{x}+{y}")
+        x = (sw - 1200) // 2
+        y = (sh - 800) // 2
+        self.root.geometry(f"1200x800+{x}+{y}")
 
     def _build_status_bar(self):
         self.status_bar = ttk.Label(
@@ -226,11 +285,11 @@ class GuiApp:
 
     def _build_booking_tab(self):
         """Tab 1: 预约（一体化）— 方案管理 + 调度引擎 + 签到 + 预约日志"""
-        frame = ttk.Frame(self.notebook, padding=5)
+        frame = ttk.Frame(self.notebook, padding=8)
         self.notebook.add(frame, text="预约")
 
         # ── 上半部分：方案管理 ──
-        plans_frame = ttk.LabelFrame(frame, text="方案管理", padding=3)
+        plans_frame = ttk.LabelFrame(frame, text="方案管理", padding=8)
         plans_frame.pack(fill=tk.BOTH, expand=True)
 
         tree_frame = ttk.Frame(plans_frame)
@@ -238,7 +297,7 @@ class GuiApp:
 
         columns = ("idx", "plan_id", "room", "floor", "seats", "time", "duration", "bookers")
         self.plans_tree = ttk.Treeview(
-            tree_frame, columns=columns, show="headings", height=5,
+            tree_frame, columns=columns, show="headings", height=8,
         )
         for col, text, width in [
             ("idx", "序号", 50), ("plan_id", "方案ID", 130),
@@ -265,7 +324,7 @@ class GuiApp:
         mid_frame.pack(fill=tk.X, pady=(5, 0))
 
         # 左侧：调度引擎
-        sched_frame = ttk.LabelFrame(mid_frame, text="调度引擎", padding=3)
+        sched_frame = ttk.LabelFrame(mid_frame, text="调度引擎", padding=8)
         sched_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         sched_btn_frame = ttk.Frame(sched_frame)
@@ -289,7 +348,7 @@ class GuiApp:
         sched_tree_frame.pack(fill=tk.BOTH, expand=True)
 
         cols = ("idx", "type", "target", "status", "plans")
-        self.schedules_tree = ttk.Treeview(sched_tree_frame, columns=cols, show="headings", height=5)
+        self.schedules_tree = ttk.Treeview(sched_tree_frame, columns=cols, show="headings", height=8)
         for col, text, w in [
             ("idx", "序号", 50), ("type", "类型", 80),
             ("target", "目标", 200), ("status", "状态", 60),
@@ -298,8 +357,8 @@ class GuiApp:
             self.schedules_tree.heading(col, text=text)
             self.schedules_tree.column(col, width=w, anchor=tk.CENTER if col in ("idx", "status") else tk.W)
 
-        self.schedules_tree.tag_configure("enabled", foreground="black")
-        self.schedules_tree.tag_configure("disabled", foreground="gray")
+        self.schedules_tree.tag_configure("enabled", foreground=GREEN)
+        self.schedules_tree.tag_configure("disabled", foreground=TEXT_DIM)
 
         sb = ttk.Scrollbar(sched_tree_frame, orient=tk.VERTICAL, command=self.schedules_tree.yview)
         self.schedules_tree.configure(yscrollcommand=sb.set)
@@ -310,7 +369,7 @@ class GuiApp:
         right_frame = ttk.Frame(mid_frame)
         right_frame.pack(side=tk.RIGHT, fill=tk.Y, padx=(10, 0))
 
-        status_frame = ttk.LabelFrame(right_frame, text="引擎状态", padding=5)
+        status_frame = ttk.LabelFrame(right_frame, text="引擎状态", padding=8)
         status_frame.pack(fill=tk.X)
 
         self.status_labels = {}
@@ -325,7 +384,7 @@ class GuiApp:
             lbl.grid(row=i, column=1, sticky=tk.W, padx=(10, 0), pady=2)
             self.status_labels[key] = lbl
 
-        checkin_frame = ttk.LabelFrame(right_frame, text="手动签到", padding=5)
+        checkin_frame = ttk.LabelFrame(right_frame, text="手动签到", padding=8)
         checkin_frame.pack(fill=tk.X, pady=(5, 0))
 
         ttk.Label(checkin_frame, text="bookingId:").pack(anchor=tk.W)
@@ -345,14 +404,15 @@ class GuiApp:
         self._checkin_result_label.pack(fill=tk.X, pady=(5, 0))
 
         # ── 底部：预约日志 ──
-        log_frame = ttk.LabelFrame(frame, text="预约日志", padding=3)
+        log_frame = ttk.LabelFrame(frame, text="预约日志", padding=8)
         log_frame.pack(fill=tk.BOTH, expand=True, pady=(5, 0))
 
-        self.booking_log = tk.Text(log_frame, state=tk.DISABLED, wrap=tk.WORD, height=6, font=("Consolas", 9))
-        self.booking_log.tag_configure("success", foreground="green")
-        self.booking_log.tag_configure("error", foreground="red")
-        self.booking_log.tag_configure("info", foreground="#0066cc")
-        self.booking_log.tag_configure("warning", foreground="#cc6600")
+        self.booking_log = tk.Text(log_frame, state=tk.DISABLED, wrap=tk.WORD, height=6,
+                                     font=(MONO_FONT, 10), bg=SURFACE, fg=TEXT,
+                                     insertbackground=TEXT, selectbackground=SELECT_BG,
+                                     relief=tk.FLAT, bd=0)
+        for tag, color in [("success", GREEN), ("error", RED), ("info", BLUE), ("warning", YELLOW)]:
+            self.booking_log.tag_configure(tag, foreground=color)
 
         log_btn_frame = ttk.Frame(log_frame)
         log_btn_frame.pack(fill=tk.X, pady=(2, 0))
@@ -377,7 +437,7 @@ class GuiApp:
 
     def _build_home_tab(self):
         """Tab 0: 首页 — 新手引导 / 仪表盘"""
-        self._home_frame = ttk.Frame(self.notebook, padding=5)
+        self._home_frame = ttk.Frame(self.notebook, padding=8)
         self.notebook.add(self._home_frame, text="首页")
 
         # 内容区域（由引导或仪表盘填充）
@@ -659,16 +719,18 @@ class GuiApp:
         self._dash_engine_label.pack(side=tk.LEFT, padx=(10, 0))
 
         # ── 中部：今日预约区 ──
-        bookings_frame = ttk.LabelFrame(self._home_content, text="今日预约", padding=5)
+        bookings_frame = ttk.LabelFrame(self._home_content, text="今日预约", padding=8)
         bookings_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 8))
 
         self._dash_bookings_text = tk.Text(
             bookings_frame, state=tk.DISABLED, wrap=tk.WORD,
-            height=8, font=("Consolas", 9),
+            height=8, font=(MONO_FONT, 10),
+            bg=SURFACE, fg=TEXT, insertbackground=TEXT,
+            selectbackground=SELECT_BG, relief=tk.FLAT, bd=0,
         )
-        self._dash_bookings_text.tag_configure("success", foreground="green")
-        self._dash_bookings_text.tag_configure("error", foreground="red")
-        self._dash_bookings_text.tag_configure("info", foreground="#0066cc")
+        self._dash_bookings_text.tag_configure("success", foreground=GREEN)
+        self._dash_bookings_text.tag_configure("error", foreground=RED)
+        self._dash_bookings_text.tag_configure("info", foreground=BLUE)
 
         sb = ttk.Scrollbar(bookings_frame, orient=tk.VERTICAL, command=self._dash_bookings_text.yview)
         self._dash_bookings_text.configure(yscrollcommand=sb.set)
@@ -745,11 +807,11 @@ class GuiApp:
 
     def _build_friends_tab(self):
         """Tab 2: 好友管理 — 好友列表 + 添加好友"""
-        frame = ttk.Frame(self.notebook, padding=5)
+        frame = ttk.Frame(self.notebook, padding=8)
         self.notebook.add(frame, text="好友")
 
         # ── 上半部分：好友列表 ──
-        list_frame = ttk.LabelFrame(frame, text="好友列表", padding=3)
+        list_frame = ttk.LabelFrame(frame, text="好友列表", padding=8)
         list_frame.pack(fill=tk.BOTH, expand=True)
 
         tree_frame = ttk.Frame(list_frame)
@@ -757,7 +819,7 @@ class GuiApp:
 
         columns = ("student_id", "name", "uid")
         self.friends_tree = ttk.Treeview(
-            tree_frame, columns=columns, show="headings", height=6,
+            tree_frame, columns=columns, show="headings", height=8,
         )
         for col, text, width in [
             ("student_id", "学号", 150),
@@ -778,7 +840,7 @@ class GuiApp:
         ttk.Button(btn_frame, text="测试登录", command=self._test_friend_login).pack(side=tk.LEFT, padx=2)
 
         # ── 下半部分：添加好友 ──
-        add_frame = ttk.LabelFrame(frame, text="添加好友", padding=5)
+        add_frame = ttk.LabelFrame(frame, text="添加好友", padding=8)
         add_frame.pack(fill=tk.X, pady=(5, 0))
 
         ttk.Label(add_frame, text="学号:").grid(row=0, column=0, sticky=tk.W, pady=4)
@@ -835,9 +897,12 @@ class GuiApp:
         ttk.Button(frame, text="保存设置", command=self._save_settings).pack(pady=10)
 
         # 帮助
-        help_frame = ttk.LabelFrame(frame, text="帮助", padding=5)
+        help_frame = ttk.LabelFrame(frame, text="帮助", padding=8)
         help_frame.pack(fill=tk.BOTH, expand=True, pady=(5, 0))
-        help_text = tk.Text(help_frame, wrap=tk.WORD, state=tk.DISABLED, height=8)
+        help_text = tk.Text(help_frame, wrap=tk.WORD, state=tk.DISABLED, height=8,
+                            bg=SURFACE, fg=TEXT, insertbackground=TEXT,
+                            selectbackground=SELECT_BG, relief=tk.FLAT, bd=0,
+                            font=(MONO_FONT, 10))
         help_text.pack(fill=tk.BOTH, expand=True)
         help_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "docs", "help.md")
         if os.path.exists(help_path):
