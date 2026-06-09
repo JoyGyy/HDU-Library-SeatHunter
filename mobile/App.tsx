@@ -3,6 +3,7 @@ import { NavigationContainer } from '@react-navigation/native'
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs'
 import HomeScreen from './src/screens/HomeScreen'
 import CheckInScreen from './src/screens/CheckInScreen'
+import FriendsScreen from './src/screens/FriendsScreen'
 
 const Tab = createBottomTabNavigator()
 
@@ -22,6 +23,7 @@ export default function App() {
       >
         <Tab.Screen name="首页" component={HomeScreen} />
         <Tab.Screen name="签到" component={CheckInScreen} />
+        <Tab.Screen name="好友" component={FriendsScreen} />
       </Tab.Navigator>
     </NavigationContainer>
   )
