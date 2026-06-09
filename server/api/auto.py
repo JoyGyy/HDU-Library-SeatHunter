@@ -98,8 +98,32 @@ def _get_seat_ids_from_cache(state) -> Dict[str, str]:
         _debug("RoomCache 未就绪")
         return seat_map
 
-    seats = state.room_cache.get_seats(ROOM_NAME, FLOOR_NAME)
-    _debug(f"RoomCache 座位数: {len(seats)}")
+    # 打印可用房间和楼层
+    room_names = state.room_cache.get_room_names()
+    _debug(f"可用房间: {room_names}")
+
+    if ROOM_NAME not in room_names:
+        _debug(f"房间 '{ROOM_NAME}' 不在缓存中")
+        return seat_map
+
+    floor_names = state.room_cache.get_floor_names(ROOM_NAME)
+    _debug(f"'{ROOM_NAME}' 的楼层: {floor_names}")
+
+    # 尝试精确匹配，如果失败则模糊匹配
+    actual_floor = FLOOR_NAME
+    if FLOOR_NAME not in floor_names:
+        # 模糊匹配
+        for fn in floor_names:
+            if "二楼" in fn and "西" in fn:
+                actual_floor = fn
+                _debug(f"模糊匹配楼层: '{fn}'")
+                break
+        else:
+            _debug(f"未找到匹配楼层 '{FLOOR_NAME}'，可用: {floor_names}")
+            return seat_map
+
+    seats = state.room_cache.get_seats(ROOM_NAME, actual_floor)
+    _debug(f"楼层 '{actual_floor}' 座位数: {len(seats)}")
 
     for s in seats:
         title = s.get("title", "")
@@ -567,6 +591,25 @@ def manual_checkin(request: Request):
 
     threading.Thread(target=_do_checkin, args=(state,), daemon=True).start()
     return {"ok": True, "message": "正在签到，请稍后刷新查看结果"}
+
+
+@router.get("/debug")
+def debug_info(request: Request):
+    """调试信息。"""
+    state = _get_state(request)
+    info: Dict[str, Any] = {
+        "api_client_ready": state.api_client is not None,
+        "room_cache_ready": state.room_cache is not None and state.room_cache.is_ready if state.room_cache else False,
+        "debug_log": _auto_state["debug_log"][-30:],
+    }
+    if state.room_cache and state.room_cache.is_ready:
+        info["rooms"] = state.room_cache.get_room_names()
+        if ROOM_NAME in (info["rooms"] or []):
+            info["floors"] = state.room_cache.get_floor_names(ROOM_NAME)
+            for fn in info["floors"]:
+                seats = state.room_cache.get_seats(ROOM_NAME, fn)
+                info[f"seats_{fn}"] = [(s.get("title"), s.get("id")) for s in seats[:10]]
+    return info
 
 
 @router.post("/start")
