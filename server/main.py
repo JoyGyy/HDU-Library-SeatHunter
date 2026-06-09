@@ -42,8 +42,40 @@ state = AppState()
 app.state.seathunter = state
 
 
+@app.on_event("startup")
+def on_startup() -> None:
+    """启动时自动登录并启动调度。"""
+    import threading
+
+    def _auto_init():
+        import time
+        time.sleep(2)  # 等待服务器完全启动
+        try:
+            from server.api.auto import USER_CONFIG, _scheduler_running
+            from server.api.auto import start_scheduler as _start_scheduler
+
+            # 自动登录
+            state.config.update_user_info(
+                login_name=USER_CONFIG["student_id"],
+                password=USER_CONFIG["password"],
+            )
+            state.session_mgr.init_session()
+            success, err_type = state.session_mgr.login()
+            if success:
+                state.init_after_login()
+                logger.info("自动登录成功: %s", state.session_mgr.name)
+            else:
+                logger.error("自动登录失败: %s", err_type)
+        except Exception as e:
+            logger.error("自动初始化失败: %s", e)
+
+    threading.Thread(target=_auto_init, daemon=True, name="AutoInit").start()
+
+
 @app.on_event("shutdown")
 def on_shutdown() -> None:
+    from server.api.auto import stop_scheduler
+    stop_scheduler()
     state.shutdown()
 
 
@@ -59,9 +91,10 @@ def root():
 
 
 # 注册路由
-from server.api import auth, bookings, checkin, friends, plans, rooms, schedules  # noqa: E402
+from server.api import auth, auto, bookings, checkin, friends, plans, rooms, schedules  # noqa: E402
 
 app.include_router(auth.router, prefix="/api/auth", tags=["认证"])
+app.include_router(auto.router, prefix="/api/auto", tags=["自动"])
 app.include_router(bookings.router, prefix="/api/bookings", tags=["预约"])
 app.include_router(checkin.router, prefix="/api/checkin", tags=["签到"])
 app.include_router(friends.router, prefix="/api/friends", tags=["好友"])

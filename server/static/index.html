@@ -8,245 +8,57 @@
 </head>
 <body>
   <div id="app">
-    <!-- 登录页面 -->
-    <div id="login-page" class="page">
-      <div class="header">
-        <h1>📚 HDU 图书馆抢座</h1>
-        <p class="subtitle">杭州电子科技大学图书馆座位预约</p>
-      </div>
-      <div class="form-group">
-        <input type="text" id="student-id" placeholder="学号" autocomplete="username">
-      </div>
-      <div class="form-group">
-        <input type="password" id="password" placeholder="密码" autocomplete="current-password">
-      </div>
-      <div class="form-group checkbox-group">
-        <label class="checkbox-label">
-          <input type="checkbox" id="remember-me"> 记住密码
-        </label>
-      </div>
-      <button id="login-btn" class="btn primary" onclick="handleLogin()">登 录</button>
-      <div id="login-error" class="error-msg"></div>
+    <div class="header">
+      <h1>📚 HDU 图书馆抢座</h1>
+      <p class="subtitle">自动预约 + 自动签到</p>
     </div>
 
-    <!-- 主页面 -->
-    <div id="main-page" class="page hidden">
-      <div class="header">
-        <h1>📚 HDU 图书馆抢座</h1>
-        <p class="subtitle" id="user-name">已登录</p>
-      </div>
-
-      <!-- 底部导航 -->
-      <nav class="tab-bar">
-        <button class="tab active" data-tab="bookings" onclick="switchTab('bookings')">
-          <span class="tab-icon">📋</span>
-          <span>预约</span>
-        </button>
-        <button class="tab" data-tab="plans" onclick="switchTab('plans')">
-          <span class="tab-icon">📝</span>
-          <span>方案</span>
-        </button>
-        <button class="tab" data-tab="scheduler" onclick="switchTab('scheduler')">
-          <span class="tab-icon">⏰</span>
-          <span>调度</span>
-        </button>
-        <button class="tab" data-tab="friends" onclick="switchTab('friends')">
-          <span class="tab-icon">👥</span>
-          <span>好友</span>
-        </button>
-        <button class="tab" data-tab="settings" onclick="switchTab('settings')">
-          <span class="tab-icon">⚙️</span>
-          <span>设置</span>
-        </button>
-      </nav>
-
-      <!-- 预约页面 -->
-      <div id="tab-bookings" class="tab-content active">
-        <div class="section">
-          <div class="section-header">
-            <h2>当前预约</h2>
-            <button class="btn small" onclick="loadBookings()">刷新</button>
+    <div class="content">
+      <!-- 状态卡片 -->
+      <div class="card">
+        <div class="card-title">📌 当前状态</div>
+        <div class="card-info">
+          <div class="status-row">
+            <span>登录状态</span>
+            <span id="login-status" class="status-badge">检查中...</span>
           </div>
-          <div id="bookings-list" class="card-list">
-            <div class="loading">加载中...</div>
+          <div class="status-row">
+            <span>自动预约</span>
+            <span id="book-status" class="status-badge">检查中...</span>
+          </div>
+          <div class="status-row">
+            <span>自动签到</span>
+            <span id="checkin-status" class="status-badge">检查中...</span>
           </div>
         </div>
       </div>
 
-      <!-- 方案页面 -->
-      <div id="tab-plans" class="tab-content">
-        <div class="section">
-          <div class="section-header">
-            <h2>预约方案</h2>
-            <button class="btn small primary" onclick="showCreatePlan()">新建方案</button>
-          </div>
-          <div id="plans-list" class="card-list">
-            <div class="loading">加载中...</div>
-          </div>
+      <!-- 今日预约 -->
+      <div class="card">
+        <div class="card-title">📋 今日预约</div>
+        <div id="bookings-list" class="card-info">
+          <div class="loading">加载中...</div>
         </div>
       </div>
 
-      <!-- 调度页面 -->
-      <div id="tab-scheduler" class="tab-content">
-        <div class="section">
-          <div class="section-header">
-            <h2>调度引擎</h2>
-          </div>
-          <div id="engine-status-card" class="card">
-            <div class="card-title">引擎状态</div>
-            <div class="card-info">
-              状态: <span id="engine-status" class="status-badge">未启动</span><br>
-              下次触发: <span id="engine-next-trigger">-</span><br>
-              倒计时: <span id="engine-countdown">-</span>
-            </div>
-            <div class="card-actions">
-              <button id="engine-start-btn" class="btn small primary" onclick="startEngine()">启动</button>
-              <button id="engine-stop-btn" class="btn small danger" onclick="stopEngine()" disabled>停止</button>
-            </div>
-          </div>
-        </div>
-        <div class="section">
-          <div class="section-header">
-            <h2>定时任务</h2>
-            <button class="btn small primary" onclick="showAddSchedule()">添加任务</button>
-          </div>
-          <div id="schedules-list" class="card-list">
-            <div class="loading">加载中...</div>
-          </div>
-        </div>
+      <!-- 操作按钮 -->
+      <div class="actions">
+        <button class="btn primary" onclick="manualBook()">立即预约</button>
+        <button class="btn" onclick="manualCheckin()">立即签到</button>
+        <button class="btn" onclick="refreshStatus()">刷新状态</button>
       </div>
 
-      <!-- 好友页面 -->
-      <div id="tab-friends" class="tab-content">
-        <div class="section">
-          <div class="section-header">
-            <h2>好友列表</h2>
-            <button class="btn small primary" onclick="showAddFriend()">添加</button>
-          </div>
-          <div id="friends-list" class="card-list">
-            <div class="loading">加载中...</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- 设置页面 -->
-      <div id="tab-settings" class="tab-content">
-        <div class="section">
-          <h2>账号</h2>
-          <div class="setting-item">
-            <span id="settings-user-name">-</span>
-            <button class="btn danger" onclick="handleLogout()">退出登录</button>
-          </div>
+      <!-- 日志 -->
+      <div class="card">
+        <div class="card-title">📝 运行日志</div>
+        <div id="log-list" class="log-container">
+          <div class="loading">暂无日志</div>
         </div>
       </div>
     </div>
-
-    <!-- 添加好友弹窗 -->
-    <div id="add-friend-modal" class="modal hidden">
-      <div class="modal-content">
-        <h3>添加好友</h3>
-        <div class="form-group">
-          <input type="text" id="friend-id" placeholder="好友学号">
-        </div>
-        <div class="form-group">
-          <input type="password" id="friend-password" placeholder="好友密码">
-        </div>
-        <div class="modal-actions">
-          <button class="btn" onclick="hideAddFriend()">取消</button>
-          <button class="btn primary" onclick="addFriend()">添加</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- 创建方案弹窗 -->
-    <div id="create-plan-modal" class="modal hidden">
-      <div class="modal-content modal-large">
-        <h3>创建预约方案</h3>
-        <div class="form-group">
-          <label class="form-label">方案名称</label>
-          <input type="text" id="plan-name" placeholder="如：周一早班">
-        </div>
-        <div class="form-group">
-          <label class="form-label">房间</label>
-          <select id="plan-room" onchange="onRoomChange()">
-            <option value="">选择房间</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label class="form-label">楼层</label>
-          <select id="plan-floor" onchange="onFloorChange()">
-            <option value="">选择楼层</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label class="form-label">座位</label>
-          <select id="plan-seat">
-            <option value="">选择座位</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label class="form-label">开始时间</label>
-          <input type="time" id="plan-begin-time" value="08:00">
-        </div>
-        <div class="form-group">
-          <label class="form-label">时长（小时）</label>
-          <input type="number" id="plan-duration" value="4" min="1" max="12">
-        </div>
-        <div class="modal-actions">
-          <button class="btn" onclick="hideCreatePlan()">取消</button>
-          <button class="btn primary" onclick="createPlan()">创建</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- 添加调度弹窗 -->
-    <div id="add-schedule-modal" class="modal hidden">
-      <div class="modal-content">
-        <h3>添加定时任务</h3>
-        <div class="form-group">
-          <label class="form-label">选择方案</label>
-          <select id="schedule-plan">
-            <option value="">选择方案</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label class="form-label">触发类型</label>
-          <select id="schedule-type" onchange="onScheduleTypeChange()">
-            <option value="weekdays">每天</option>
-            <option value="dates">指定日期</option>
-          </select>
-        </div>
-        <div id="schedule-weekday-group" class="form-group">
-          <label class="form-label">星期几</label>
-          <select id="schedule-weekday">
-            <option value="1">周一</option>
-            <option value="2">周二</option>
-            <option value="3">周三</option>
-            <option value="4">周四</option>
-            <option value="5">周五</option>
-            <option value="6">周六</option>
-            <option value="0">周日</option>
-          </select>
-        </div>
-        <div id="schedule-date-group" class="form-group hidden">
-          <label class="form-label">日期</label>
-          <input type="date" id="schedule-date">
-        </div>
-        <div class="form-group">
-          <label class="form-label">触发时间</label>
-          <input type="time" id="schedule-time" value="07:30">
-        </div>
-        <div class="modal-actions">
-          <button class="btn" onclick="hideAddSchedule()">取消</button>
-          <button class="btn primary" onclick="addSchedule()">添加</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Toast 提示 -->
-    <div id="toast" class="toast hidden"></div>
   </div>
 
+  <div id="toast" class="toast hidden"></div>
   <script src="/static/app.js"></script>
 </body>
 </html>
