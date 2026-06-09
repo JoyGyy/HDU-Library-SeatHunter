@@ -2,6 +2,7 @@ import React from 'react'
 import { NavigationContainer } from '@react-navigation/native'
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs'
 import HomeScreen from './src/screens/HomeScreen'
+import CheckInScreen from './src/screens/CheckInScreen'
 
 const Tab = createBottomTabNavigator()
 
@@ -20,6 +21,7 @@ export default function App() {
         }}
       >
         <Tab.Screen name="首页" component={HomeScreen} />
+        <Tab.Screen name="签到" component={CheckInScreen} />
       </Tab.Navigator>
     </NavigationContainer>
   )
