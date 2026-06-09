@@ -5,3 +5,6 @@ PyYAML>=6.0.2
 requests>=2.28.1
 urllib3>=1.26.14
 playwright>=1.40.0
+fastapi>=0.104.0
+uvicorn>=0.24.0
+pydantic>=2.5.0
