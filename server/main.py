@@ -50,21 +50,12 @@ def root():
     return {"name": "HDU Library SeatHunter API", "version": "1.0.0"}
 
 
-# 注册路由（路由模块在后续任务中创建）
-# 当路由文件就绪后取消注释：
-# from server.api.auth import router as auth_router
-# from server.api.bookings import router as bookings_router
-# from server.api.checkin import router as checkin_router
-# from server.api.friends import router as friends_router
-# from server.api.plans import router as plans_router
-# from server.api.schedules import router as schedules_router
-#
-# app.include_router(auth_router, prefix="/api/auth", tags=["认证"])
-# app.include_router(bookings_router, prefix="/api/bookings", tags=["预约"])
-# app.include_router(checkin_router, prefix="/api/checkin", tags=["签到"])
-# app.include_router(friends_router, prefix="/api/friends", tags=["好友"])
-# app.include_router(plans_router, prefix="/api/plans", tags=["方案"])
-# app.include_router(schedules_router, prefix="/api/schedules", tags=["调度"])
+# 注册路由
+from server.api import auth, checkin, friends  # noqa: E402
+
+app.include_router(auth.router, prefix="/api/auth", tags=["认证"])
+app.include_router(checkin.router, prefix="/api/checkin", tags=["签到"])
+app.include_router(friends.router, prefix="/api/friends", tags=["好友"])
 
 
 if __name__ == "__main__":
