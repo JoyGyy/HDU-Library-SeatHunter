@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import threading
 
 from fastapi import APIRouter, Request
@@ -13,7 +14,11 @@ from server.models.schemas import (
     MessageResponse,
 )
 
+logger = logging.getLogger("seathunter.server")
+
 router = APIRouter()
+
+login_lock = threading.Lock()
 
 
 def _get_state(request: Request):
@@ -21,47 +26,57 @@ def _get_state(request: Request):
     return request.app.state.seathunter
 
 
+def _join_with_timeout(t: threading.Thread, timeout: float, label: str) -> bool:
+    """等待线程结束，超时时记录警告。返回 True 表示超时。"""
+    t.join(timeout=timeout)
+    if t.is_alive():
+        logger.warning("线程超时（%.0fs）: %s", timeout, label)
+        return True
+    return False
+
+
 @router.post("/login", response_model=LoginResponse)
 def login(body: LoginRequest, request: Request):
     """登录：在后台线程中执行 Playwright 登录。"""
     state = _get_state(request)
-    session_mgr = state.session_mgr
 
-    # 保存请求的学号密码到配置
-    user_info = state.config.get_user_info()
-    user_info["login_name"] = body.student_id
-    user_info["password"] = body.password
-    state.config.set_user_info(user_info)
+    with login_lock:
+        session_mgr = state.session_mgr
 
-    # 重新初始化 session（使用新凭证）
-    session_mgr.init_session()
+        # 保存请求的学号密码到配置
+        user_info = state.config.get_user_info()
+        user_info["login_name"] = body.student_id
+        user_info["password"] = body.password
+        state.config.set_user_info(user_info)
 
-    # 在后台线程中执行登录（Playwright 是同步阻塞的）
-    result = {"success": False, "err_type": None}
+        # 重新初始化 session（使用新凭证）
+        session_mgr.init_session()
 
-    def _do_login():
-        result["success"], result["err_type"] = session_mgr.login()
+        # 在后台线程中执行登录（Playwright 是同步阻塞的）
+        result = {"success": False, "err_type": None}
 
-    t = threading.Thread(target=_do_login, daemon=True)
-    t.start()
-    t.join(timeout=120)
+        def _do_login():
+            result["success"], result["err_type"] = session_mgr.login()
 
-    if t.is_alive():
-        return LoginResponse(success=False, message="登录超时（120秒）")
+        t = threading.Thread(target=_do_login, daemon=True)
+        t.start()
 
-    if not result["success"]:
-        err = session_mgr.last_error or "登录失败"
-        return LoginResponse(success=False, message=err)
+        if _join_with_timeout(t, 120, "login"):
+            return LoginResponse(success=False, message="登录超时（120秒）")
 
-    # 登录成功，初始化后续组件
-    state.init_after_login()
+        if not result["success"]:
+            err = session_mgr.last_error or "登录失败"
+            return LoginResponse(success=False, message=err)
 
-    return LoginResponse(
-        success=True,
-        message="登录成功",
-        uid=session_mgr.uid,
-        name=session_mgr.name,
-    )
+        # 登录成功，初始化后续组件
+        state.init_after_login()
+
+        return LoginResponse(
+            success=True,
+            message="登录成功",
+            uid=session_mgr.uid,
+            name=session_mgr.name,
+        )
 
 
 @router.get("/status", response_model=AuthStatusResponse)

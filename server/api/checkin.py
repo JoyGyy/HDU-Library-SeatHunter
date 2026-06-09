@@ -1,17 +1,15 @@
-"""签到路由：签到、获取预约列表。"""
+"""签到路由：签到。"""
 
 from __future__ import annotations
 
+import logging
 import threading
 
 from fastapi import APIRouter, HTTPException, Request
 
-from server.models.schemas import (
-    BookingItem,
-    BookingListResponse,
-    CheckInResponse,
-    MessageResponse,
-)
+from server.models.schemas import CheckInResponse
+
+logger = logging.getLogger("seathunter.server")
 
 router = APIRouter()
 
@@ -29,7 +27,16 @@ def _require_api_client(request: Request):
     return state
 
 
-@router.post("/{booking_id}", response_model=CheckInResponse)
+def _join_with_timeout(t: threading.Thread, timeout: float, label: str) -> bool:
+    """等待线程结束，超时时记录警告。返回 True 表示超时。"""
+    t.join(timeout=timeout)
+    if t.is_alive():
+        logger.warning("线程超时（%.0fs）: %s", timeout, label)
+        return True
+    return False
+
+
+@router.post("/do/{booking_id}", response_model=CheckInResponse)
 def check_in(booking_id: str, request: Request):
     """签到：在后台线程中调用 API。"""
     state = _require_api_client(request)
@@ -43,30 +50,8 @@ def check_in(booking_id: str, request: Request):
 
     t = threading.Thread(target=_do_checkin, daemon=True)
     t.start()
-    t.join(timeout=30)
 
-    if t.is_alive():
+    if _join_with_timeout(t, 30, f"check_in({booking_id})"):
         return CheckInResponse(success=False, message="签到超时")
 
     return CheckInResponse(success=result["success"], message=result["message"])
-
-
-@router.get("/bookings", response_model=BookingListResponse)
-def get_bookings(request: Request):
-    """获取当前用户的预约列表。"""
-    state = _require_api_client(request)
-
-    result = {"bookings": []}
-
-    def _do_fetch():
-        result["bookings"] = state.api_client.get_my_bookings()
-
-    t = threading.Thread(target=_do_fetch, daemon=True)
-    t.start()
-    t.join(timeout=30)
-
-    if t.is_alive():
-        return BookingListResponse(success=False, message="获取预约列表超时")
-
-    items = [BookingItem(**b) for b in result["bookings"]]
-    return BookingListResponse(success=True, bookings=items)

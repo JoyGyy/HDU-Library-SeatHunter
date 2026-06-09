@@ -53,6 +53,23 @@ class AppState:
 
     def init_after_login(self) -> None:
         """登录成功后初始化需要 session 的组件。"""
+        # 清理之前的实例，避免重复初始化导致泄漏
+        if self.engine:
+            try:
+                self.engine.stop()
+            except Exception:
+                pass
+        if self.room_cache:
+            try:
+                self.room_cache.stop_background_refresh()
+            except Exception:
+                pass
+        if self.runner:
+            try:
+                self.runner.cancel()
+            except Exception:
+                pass
+
         self.api_client = ApiClient(self.session_mgr)
 
         settings = self.config.get_settings()

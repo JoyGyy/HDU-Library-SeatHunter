@@ -45,7 +45,7 @@ def test_scheduler_status():
 
 
 def test_checkin_not_logged_in():
-    resp = client.post("/api/checkin/12345")
+    resp = client.post("/api/checkin/do/12345")
     assert resp.status_code == 401
 
 

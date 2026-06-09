@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import threading
 
 from fastapi import APIRouter, Request
@@ -16,12 +17,23 @@ from server.models.schemas import (
     TestLoginResponse,
 )
 
+logger = logging.getLogger("seathunter.server")
+
 router = APIRouter()
 
 
 def _get_state(request: Request):
     """从 app.state 获取全局 AppState 实例。"""
     return request.app.state.seathunter
+
+
+def _join_with_timeout(t: threading.Thread, timeout: float, label: str) -> bool:
+    """等待线程结束，超时时记录警告。返回 True 表示超时。"""
+    t.join(timeout=timeout)
+    if t.is_alive():
+        logger.warning("线程超时（%.0fs）: %s", timeout, label)
+        return True
+    return False
 
 
 @router.get("", response_model=FriendListResponse)
@@ -58,9 +70,8 @@ def add_friend(body: AddFriendRequest, request: Request):
 
     t = threading.Thread(target=_do_lookup, daemon=True)
     t.start()
-    t.join(timeout=120)
 
-    if t.is_alive():
+    if _join_with_timeout(t, 120, "add_friend"):
         return AddFriendResponse(success=False, message="查询超时（120秒）")
 
     if not result["success"]:
@@ -101,9 +112,8 @@ def test_friend_login(student_id: str, request: Request):
 
     t = threading.Thread(target=_do_test, daemon=True)
     t.start()
-    t.join(timeout=120)
 
-    if t.is_alive():
+    if _join_with_timeout(t, 120, "test_friend_login"):
         return TestLoginResponse(success=False, message="测试超时（120秒）")
 
     return TestLoginResponse(success=result["success"], message=result["message"])

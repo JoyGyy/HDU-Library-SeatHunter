@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import threading
 from typing import Any, Dict, List
 
@@ -9,12 +10,23 @@ from fastapi import APIRouter, HTTPException, Request
 
 from server.models.schemas import BookingListResponse
 
+logger = logging.getLogger("seathunter.server")
+
 router = APIRouter()
 
 
 def _get_state(request: Request):
     """从 app.state 获取全局 AppState 实例。"""
     return request.app.state.seathunter
+
+
+def _join_with_timeout(t: threading.Thread, timeout: float, label: str) -> bool:
+    """等待线程结束，超时时记录警告。返回 True 表示超时。"""
+    t.join(timeout=timeout)
+    if t.is_alive():
+        logger.warning("线程超时（%.0fs）: %s", timeout, label)
+        return True
+    return False
 
 
 @router.get("", response_model=BookingListResponse)
@@ -37,9 +49,8 @@ def list_bookings(request: Request):
 
     t = threading.Thread(target=_fetch, daemon=True)
     t.start()
-    t.join(timeout=30)
 
-    if t.is_alive():
+    if _join_with_timeout(t, 30, "list_bookings"):
         raise HTTPException(status_code=504, detail="获取预约列表超时")
     if error:
         raise HTTPException(status_code=500, detail=f"获取预约列表失败: {error}")
