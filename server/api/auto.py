@@ -327,15 +327,15 @@ def _check_already_booked(api_client, target_date) -> Dict[str, bool]:
 
 
 def _do_book_single(api_client, seat_id: str, seat_num: str,
-                     booker_uid: str, target_time: datetime, state=None) -> Dict:
+                     booker_uids: List[str], target_time: datetime, state=None) -> Dict:
     """预约单个座位，失败时自动重试登录。"""
-    _debug(f"预约座位 {seat_num} (ID: {seat_id}) -> {target_time.strftime('%m-%d %H:%M')}")
+    _debug(f"预约座位 {seat_num} (ID: {seat_id}, 预约人: {booker_uids}) -> {target_time.strftime('%m-%d %H:%M')}")
     try:
         resp = api_client.book_seat(
             begin_time=target_time,
             duration_hours=DURATION_HOURS,
             seat_ids=[seat_id],
-            booker_uids=[booker_uid],
+            booker_uids=booker_uids,
         )
 
         # 检查是否是 CAS 重定向（session 过期）
@@ -344,11 +344,14 @@ def _do_book_single(api_client, seat_id: str, seat_num: str,
             if state and _do_relogin(state):
                 # 重新登录后重试
                 api_client = state.api_client
+                _debug(f"重新登录成功，重试预约座位 {seat_num}...")
+                import time
+                time.sleep(2)
                 resp = api_client.book_seat(
                     begin_time=target_time,
                     duration_hours=DURATION_HOURS,
                     seat_ids=[seat_id],
-                    booker_uids=[booker_uid],
+                    booker_uids=booker_uids,
                 )
             else:
                 _debug(f"重新登录失败，无法预约座位 {seat_num}")
@@ -459,9 +462,15 @@ def _do_book(state) -> None:
                     continue
 
                 # 确定预约人 UID
-                booker_uid = COMPANION_UID if seat_num == "99" else USER_UID
+                # API 要求：当前登录用户必须在预约人列表中
+                if seat_num == "99":
+                    # 预约同伴的座位：同伴 + 当前用户
+                    booker_uids = [COMPANION_UID, USER_UID]
+                else:
+                    # 预约自己的座位：当前用户
+                    booker_uids = [USER_UID]
 
-                resp = _do_book_single(api, seat_id, seat_num, booker_uid, target_time, state=state)
+                resp = _do_book_single(api, seat_id, seat_num, booker_uids, target_time, state=state)
                 code = resp.get("CODE", "")
                 msg = resp.get("MESSAGE", resp.get("msg", ""))
                 if code == "ok":
