@@ -36,7 +36,7 @@ COMPANION_UID = "305033"
 TARGET_SEATS = ["99", "100"]
 
 # 固定房间和楼层
-ROOM_NAME = "自习室二楼西"
+ROOM_NAME = "自习室"
 FLOOR_NAME = "二楼西"
 
 # 固定时间：10:00 开始，12 小时
