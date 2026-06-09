@@ -105,11 +105,23 @@ def _search_seats_for_time(api_client, target_time: datetime) -> Dict[str, Any]:
         ).json()
 
         # 从搜索结果中找到目标楼层的座位
+        # 响应格式: {allContent: {children: [type_selector, ..., {children: {children: [floor1, floor2, ...]}}]}}
         seat_map = {}
-        for child in resp.get("allContent", {}).get("children", []):
-            if isinstance(child, dict) and "children" in child:
-                for floor in child.get("children", {}).get("children", []):
-                    if isinstance(floor, dict) and floor.get("roomName") == FLOOR_NAME:
+        all_content = resp.get("allContent", {})
+        children = all_content.get("children", [])
+
+        # 遍历所有 children，找到包含楼层数据的节点
+        for child in children:
+            if not isinstance(child, dict):
+                continue
+            # 直接包含 floors 的节点
+            if "children" in child and isinstance(child["children"], dict):
+                floors = child["children"].get("children", [])
+                for floor in floors:
+                    if not isinstance(floor, dict):
+                        continue
+                    room_name = floor.get("roomName", "")
+                    if room_name == FLOOR_NAME:
                         pois = floor.get("seatMap", {}).get("POIs", [])
                         for poi in pois:
                             title = poi.get("title", "")
@@ -117,6 +129,30 @@ def _search_seats_for_time(api_client, target_time: datetime) -> Dict[str, Any]:
                             if title in TARGET_SEATS:
                                 seat_map[title] = seat_id
                                 logger.info("找到座位 %s -> ID %s", title, seat_id)
+                        break
+            # 也检查嵌套结构
+            elif "children" in child and isinstance(child["children"], list):
+                for sub in child["children"]:
+                    if not isinstance(sub, dict):
+                        continue
+                    if "children" in sub and isinstance(sub["children"], dict):
+                        floors = sub["children"].get("children", [])
+                        for floor in floors:
+                            if not isinstance(floor, dict):
+                                continue
+                            room_name = floor.get("roomName", "")
+                            if room_name == FLOOR_NAME:
+                                pois = floor.get("seatMap", {}).get("POIs", [])
+                                for poi in pois:
+                                    title = poi.get("title", "")
+                                    seat_id = str(poi.get("id", ""))
+                                    if title in TARGET_SEATS:
+                                        seat_map[title] = seat_id
+                                        logger.info("找到座位 %s -> ID %s", title, seat_id)
+                                break
+
+        if not seat_map:
+            logger.warning("未在搜索结果中找到座位 %s (响应 keys: %s)", TARGET_SEATS, list(resp.keys()))
 
         return seat_map
     except Exception as e:
@@ -252,8 +288,8 @@ def _do_checkin_for_user(student_id: str, password: str, user_name: str,
         from seathunter.auth.session_manager import SessionManager
         from seathunter.api.client import ApiClient as LibApiClient
 
-        # 创建临时会话
-        temp_session_mgr = SessionManager()
+        # 创建临时会话（使用相同的 config_manager）
+        temp_session_mgr = SessionManager(config_manager=state.config)
         temp_session_mgr.set_credentials(student_id, password)
         login_ok = temp_session_mgr.login()
         if not login_ok:
@@ -410,7 +446,7 @@ def get_bookings(request: Request):
         from seathunter.auth.session_manager import SessionManager
         from seathunter.api.client import ApiClient as LibApiClient
 
-        temp_mgr = SessionManager()
+        temp_mgr = SessionManager(config_manager=state.config)
         temp_mgr.set_credentials(COMPANION_STUDENT_ID, COMPANION_PASSWORD)
         if temp_mgr.login():
             temp_api = LibApiClient(temp_mgr)
