@@ -70,21 +70,55 @@ body {
   margin-bottom: 16px;
 }
 
+.form-label {
+  display: block;
+  font-size: 13px;
+  color: var(--subtext);
+  margin-bottom: 6px;
+}
+
 input[type="text"],
-input[type="password"] {
+input[type="password"],
+input[type="time"],
+input[type="date"],
+input[type="number"] {
   width: 100%;
-  height: 50px;
+  height: 44px;
   background: var(--surface);
   border: 1px solid var(--overlay);
   border-radius: var(--radius);
-  padding: 0 16px;
-  font-size: 16px;
+  padding: 0 14px;
+  font-size: 15px;
   color: var(--text);
   outline: none;
   transition: border-color 0.2s;
 }
 
-input:focus {
+select {
+  width: 100%;
+  height: 44px;
+  background: var(--surface);
+  border: 1px solid var(--overlay);
+  border-radius: var(--radius);
+  padding: 0 14px;
+  font-size: 15px;
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.2s;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23a6adc8' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+  padding-right: 36px;
+}
+
+select option {
+  background: var(--surface);
+  color: var(--text);
+}
+
+input:focus,
+select:focus {
   border-color: var(--blue);
 }
 
@@ -135,6 +169,11 @@ input::placeholder {
 
 .btn.danger {
   background: var(--red);
+  color: var(--bg);
+}
+
+.btn.success {
+  background: var(--green);
   color: var(--bg);
 }
 
@@ -197,7 +236,7 @@ input::placeholder {
   border: none;
   background: none;
   color: var(--subtext);
-  font-size: 11px;
+  font-size: 10px;
   cursor: pointer;
   transition: color 0.2s;
   gap: 2px;
@@ -336,6 +375,7 @@ input::placeholder {
   justify-content: center;
   z-index: 200;
   padding: 20px;
+  overflow-y: auto;
 }
 
 .modal.hidden {
@@ -349,6 +389,12 @@ input::placeholder {
   width: 100%;
   max-width: 400px;
   border: 1px solid var(--overlay);
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.modal-large {
+  max-width: 450px;
 }
 
 .modal-content h3 {
@@ -387,6 +433,11 @@ input::placeholder {
 .toast.hidden {
   opacity: 0;
   pointer-events: none;
+}
+
+/* 隐藏类 */
+.hidden {
+  display: none !important;
 }
 
 /* 深色主题输入框自动填充样式 */
