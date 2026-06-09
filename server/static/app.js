@@ -67,6 +67,7 @@ async function handleLogin() {
     });
 
     if (data.success) {
+      saveCredentials(); // 保存密码
       $('user-name').textContent = `已登录: ${data.name}`;
       $('settings-user-name').textContent = `${data.name} (${studentId})`;
       showMainPage();
@@ -237,8 +238,57 @@ async function deleteFriend(studentId) {
   }
 }
 
+// 保存/读取密码
+function saveCredentials() {
+  const remember = $('remember-me').checked;
+  if (remember) {
+    localStorage.setItem('seathunter_student_id', $('student-id').value);
+    localStorage.setItem('seathunter_password', btoa($('password').value)); // base64 编码
+    localStorage.setItem('seathunter_remember', 'true');
+  } else {
+    localStorage.removeItem('seathunter_student_id');
+    localStorage.removeItem('seathunter_password');
+    localStorage.removeItem('seathunter_remember');
+  }
+}
+
+function loadCredentials() {
+  const remember = localStorage.getItem('seathunter_remember') === 'true';
+  if (remember) {
+    $('student-id').value = localStorage.getItem('seathunter_student_id') || '';
+    $('password').value = atob(localStorage.getItem('seathunter_password') || '');
+    $('remember-me').checked = true;
+  }
+}
+
+// 自动登录
+async function autoLogin() {
+  const remember = localStorage.getItem('seathunter_remember') === 'true';
+  const studentId = localStorage.getItem('seathunter_student_id');
+  const password = localStorage.getItem('seathunter_password');
+
+  if (!remember || !studentId || !password) return false;
+
+  try {
+    const data = await request('POST', '/auth/login', {
+      student_id: studentId,
+      password: atob(password),
+    });
+
+    if (data.success) {
+      $('user-name').textContent = `已登录: ${data.name}`;
+      $('settings-user-name').textContent = `${data.name} (${studentId})`;
+      showMainPage();
+      loadBookings();
+      return true;
+    }
+  } catch {}
+  return false;
+}
+
 // 页面初始化
 async function init() {
+  // 先尝试用已保存的 session
   try {
     const data = await request('GET', '/auth/status');
     if (data.logged_in) {
@@ -246,9 +296,17 @@ async function init() {
       $('settings-user-name').textContent = `${data.name} (${data.student_id})`;
       showMainPage();
       loadBookings();
+      return;
     }
-  } catch {
-    // 后端未连接，显示登录页
+  } catch {}
+
+  // 加载保存的密码
+  loadCredentials();
+
+  // 尝试自动登录
+  const autoLogged = await autoLogin();
+  if (!autoLogged) {
+    // 显示登录页，密码已填充
   }
 }
 
