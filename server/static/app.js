@@ -87,7 +87,7 @@ async function loadBookings() {
       const statusClass = b.status === '已签到' ? 'success' : (b.status === '待签到' ? 'pending' : 'info');
       return `<div style="padding: 6px 0; border-bottom: 1px solid rgba(69,71,90,0.3);">
         <div>${b.user_name || ''} - ${b.room_name || '未知'} ${b.seat_num || ''}号座</div>
-        <div style="font-size:12px; color: var(--overlay);">${b.time_range || ''} <span class="status-badge ${statusClass}">${b.status || ''}</span></div>
+        <div style="font-size:13px; color: var(--subtext);">${b.time_range || ''} <span class="status-badge ${statusClass}">${b.status || ''}</span></div>
       </div>`;
     }).join('');
   } catch (err) {
