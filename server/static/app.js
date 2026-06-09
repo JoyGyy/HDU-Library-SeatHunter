@@ -1,18 +1,13 @@
-/* ── 全局变量 ── */
-let refreshTimer = null;
-
 /* ── 工具函数 ── */
 function escHtml(str) {
   if (!str && str !== 0) return '';
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+function qs(id) { return document.getElementById(id); }
+
 function log(msg) {
-  const c = document.getElementById('log');
+  const c = qs('log');
   if (!c) return;
   const t = document.createElement('div');
   t.className = 'log-line';
@@ -20,9 +15,9 @@ function log(msg) {
   c.appendChild(t);
   c.scrollTop = c.scrollHeight;
   if (c.children.length > 200) c.removeChild(c.firstChild);
+  const cnt = qs('logCount');
+  if (cnt) cnt.textContent = c.children.length;
 }
-
-function qs(id) { return document.getElementById(id); }
 
 /* ── API 调用 ── */
 function refreshStatus() {
@@ -35,31 +30,41 @@ function refreshStatus() {
         loginEl.textContent = d.logged_in ? '✅ 已登录' : '❌ 未登录';
         loginEl.className = 'badge ' + (d.logged_in ? 'badge-on' : 'badge-off');
       }
-
       // 调度状态
       const schedEl = qs('schedulerStatus');
       if (schedEl) {
         schedEl.textContent = d.running ? '🟢 运行中' : '🔴 已停止';
         schedEl.className = 'badge ' + (d.running ? 'badge-on' : 'badge-off');
       }
-
       // 目标座位
       const seatsEl = qs('targetSeats');
       if (seatsEl) seatsEl.textContent = (d.target_seats || []).join(', ') || '-';
-
       // 预约结果
       const bookResEl = qs('bookResult');
       if (bookResEl) bookResEl.textContent = d.last_book_result || '-';
-
       // 签到结果
       const checkResEl = qs('checkinResult');
       if (checkResEl) checkResEl.textContent = d.last_checkin_result || '-';
-
-      // 错误信息
-      const errEl = qs('errorInfo');
-      if (errEl) {
-        errEl.textContent = d.last_error || '无';
-        errEl.className = 'result-value ' + (d.last_error ? 'badge-error' : '');
+      // 后端调试日志
+      if (d.debug_log && d.debug_log.length) {
+        const logEl = qs('log');
+        if (logEl) {
+          // 只添加新的日志行
+          const existing = logEl.querySelectorAll('.log-line.backend-log');
+          const existingTexts = new Set();
+          existing.forEach(el => existingTexts.add(el.textContent));
+          d.debug_log.forEach(line => {
+            if (!existingTexts.has(line)) {
+              const t = document.createElement('div');
+              t.className = 'log-line backend-log';
+              t.textContent = line;
+              logEl.appendChild(t);
+            }
+          });
+          logEl.scrollTop = logEl.scrollHeight;
+          const cnt = qs('logCount');
+          if (cnt) cnt.textContent = logEl.children.length;
+        }
       }
     })
     .catch(e => log('状态刷新失败: ' + e));
@@ -79,8 +84,9 @@ function loadBookings() {
         return;
       }
       tbody.innerHTML = list.map(b => {
-        const timeStr = b.beginTime && b.endTime
-          ? `${b.beginTime} ~ ${b.endTime}`
+        // 时间显示：beginTime 已经格式化为 "YYYY-MM-DD HH:MM"
+        const timeStr = b.beginTime
+          ? (b.endTime ? `${b.beginTime} ~ ${b.endTime}` : b.beginTime)
           : '时间未知';
         const statusClass = b.status === '已签到' ? 'status-active' :
           b.status === '待签到' ? 'status-pending' : 'status-ended';
@@ -107,10 +113,9 @@ function manualBook() {
     .then(r => r.json())
     .then(d => {
       log('预约请求: ' + (d.message || JSON.stringify(d)));
-      setTimeout(() => {
-        refreshStatus();
-        loadBookings();
-      }, 3000);
+      // 等待后台任务执行
+      setTimeout(refreshStatus, 3000);
+      setTimeout(loadBookings, 5000);
     })
     .catch(e => log('预约失败: ' + e));
 }
@@ -122,10 +127,8 @@ function manualCheckin() {
     .then(r => r.json())
     .then(d => {
       log('签到请求: ' + (d.message || JSON.stringify(d)));
-      setTimeout(() => {
-        refreshStatus();
-        loadBookings();
-      }, 3000);
+      setTimeout(refreshStatus, 3000);
+      setTimeout(loadBookings, 5000);
     })
     .catch(e => log('签到失败: ' + e));
 }
@@ -154,8 +157,7 @@ function manualRefresh() {
 document.addEventListener('DOMContentLoaded', () => {
   refreshStatus();
   loadBookings();
-  // 每 30 秒自动刷新
-  refreshTimer = setInterval(() => {
+  setInterval(() => {
     refreshStatus();
     loadBookings();
   }, 30000);

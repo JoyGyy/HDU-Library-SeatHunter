@@ -27,7 +27,7 @@
       </div>
     </div>
 
-    <!-- 预约结果 -->
+    <!-- 执行结果 -->
     <div class="card">
       <h2>执行结果</h2>
       <div class="result-row">
@@ -37,10 +37,6 @@
       <div class="result-row">
         <span class="result-label">签到</span>
         <span id="checkinResult" class="result-value">-</span>
-      </div>
-      <div class="result-row">
-        <span class="result-label">错误</span>
-        <span id="errorInfo" class="result-value">无</span>
       </div>
     </div>
 
@@ -58,9 +54,9 @@
       <button class="btn btn-info" onclick="manualRefresh()">刷新</button>
     </div>
 
-    <!-- 日志 -->
+    <!-- 调试日志 -->
     <div class="card">
-      <h2>运行日志</h2>
+      <h2>运行日志 <span id="logCount" class="badge badge-info">0</span></h2>
       <div id="log" class="log-container"></div>
     </div>
   </div>

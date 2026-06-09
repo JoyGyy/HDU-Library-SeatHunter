@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import threading
 from datetime import datetime, timedelta
@@ -69,26 +70,66 @@ _auto_state: Dict[str, Any] = {
     "last_book_result": "",
     "last_checkin_result": "",
     "last_error": "",
+    "debug_log": [],  # 调试日志
 }
+
+
+def _debug(msg: str) -> None:
+    """记录调试信息到状态中，方便前端查看。"""
+    ts = datetime.now().strftime("%H:%M:%S")
+    entry = f"[{ts}] {msg}"
+    _auto_state["debug_log"].append(entry)
+    # 只保留最近 50 条
+    if len(_auto_state["debug_log"]) > 50:
+        _auto_state["debug_log"] = _auto_state["debug_log"][-50:]
+    logger.info(msg)
 
 
 def _get_state(request: Request):
     return request.app.state.seathunter
 
 
-# ─── 预约逻辑 ─────────────────────────────────────────────────────────────────────
-def _search_seats_for_time(api_client, target_time: datetime) -> Dict[str, Any]:
-    """搜索指定时间的座位，返回座位号 -> 真实 seat_id 的映射。"""
+# ─── 座位 ID 查找 ────────────────────────────────────────────────────────────────
+def _get_seat_ids_from_cache(state) -> Dict[str, str]:
+    """从 RoomCache 获取目标座位的真实 ID。返回 {座位号: seat_id}。"""
+    seat_map: Dict[str, str] = {}
+
+    if state.room_cache is None or not state.room_cache.is_ready:
+        _debug("RoomCache 未就绪")
+        return seat_map
+
+    seats = state.room_cache.get_seats(ROOM_NAME, FLOOR_NAME)
+    _debug(f"RoomCache 座位数: {len(seats)}")
+
+    for s in seats:
+        title = s.get("title", "")
+        seat_id = str(s.get("id", ""))
+        if title in TARGET_SEATS:
+            seat_map[title] = seat_id
+            _debug(f"座位 {title} -> ID {seat_id}")
+
+    if not seat_map:
+        # 打印前 5 个座位的 title 以便调试
+        sample = [(s.get("title", "?"), s.get("id", "?")) for s in seats[:5]]
+        _debug(f"未找到目标座位，样本: {sample}")
+
+    return seat_map
+
+
+def _search_seats_via_api(api_client, target_time: datetime) -> Dict[str, str]:
+    """通过 API 搜索座位（备用方案）。返回 {座位号: seat_id}。"""
+    seat_map: Dict[str, str] = {}
     try:
         # 获取房间信息
         rooms = api_client.query_rooms()
         if ROOM_NAME not in rooms:
-            logger.error("房间 '%s' 未找到", ROOM_NAME)
-            return {}
+            _debug(f"房间 '{ROOM_NAME}' 未在 API 返回中找到，可用: {list(rooms.keys())}")
+            return seat_map
 
         room_data = rooms[ROOM_NAME]
         category_id = room_data["space_category"]["category_id"]
         content_id = room_data["space_category"]["content_id"]
+        _debug(f"房间 category_id={category_id}, content_id={content_id}")
 
         # 搜索指定时间的座位
         data = {
@@ -104,85 +145,103 @@ def _search_seats_for_time(api_client, target_time: datetime) -> Dict[str, Any]:
             timeout=30,
         ).json()
 
-        # 从搜索结果中找到目标楼层的座位
-        # 响应格式: {allContent: {children: [type_selector, ..., {children: {children: [floor1, floor2, ...]}}]}}
-        seat_map = {}
-        all_content = resp.get("allContent", {})
-        children = all_content.get("children", [])
+        # 保存原始响应用于调试
+        resp_keys = list(resp.keys())
+        _debug(f"searchSeats 响应 keys: {resp_keys}")
 
-        # 遍历所有 children，找到包含楼层数据的节点
-        for child in children:
+        all_content = resp.get("allContent", resp.get("content", {}))
+        children = all_content.get("children", [])
+        _debug(f"allContent.children 数量: {len(children)}")
+
+        # 遍历所有 children 找楼层
+        for i, child in enumerate(children):
             if not isinstance(child, dict):
                 continue
-            # 直接包含 floors 的节点
-            if "children" in child and isinstance(child["children"], dict):
-                floors = child["children"].get("children", [])
-                for floor in floors:
-                    if not isinstance(floor, dict):
-                        continue
-                    room_name = floor.get("roomName", "")
-                    if room_name == FLOOR_NAME:
-                        pois = floor.get("seatMap", {}).get("POIs", [])
-                        for poi in pois:
-                            title = poi.get("title", "")
-                            seat_id = str(poi.get("id", ""))
-                            if title in TARGET_SEATS:
-                                seat_map[title] = seat_id
-                                logger.info("找到座位 %s -> ID %s", title, seat_id)
-                        break
-            # 也检查嵌套结构
-            elif "children" in child and isinstance(child["children"], list):
-                for sub in child["children"]:
+
+            # 尝试各种可能的结构
+            inner = child.get("children", child)
+            if isinstance(inner, dict):
+                floors = inner.get("children", [])
+                if isinstance(floors, list):
+                    for floor in floors:
+                        if not isinstance(floor, dict):
+                            continue
+                        room_name = floor.get("roomName", "")
+                        _debug(f"  child[{i}] floor roomName='{room_name}'")
+                        if room_name == FLOOR_NAME:
+                            pois = floor.get("seatMap", {}).get("POIs", [])
+                            _debug(f"  找到目标楼层，座位数: {len(pois)}")
+                            for poi in pois:
+                                title = poi.get("title", "")
+                                sid = str(poi.get("id", ""))
+                                if title in TARGET_SEATS:
+                                    seat_map[title] = sid
+                                    _debug(f"  座位 {title} -> ID {sid}")
+            elif isinstance(inner, list):
+                for j, sub in enumerate(inner):
                     if not isinstance(sub, dict):
                         continue
-                    if "children" in sub and isinstance(sub["children"], dict):
-                        floors = sub["children"].get("children", [])
-                        for floor in floors:
-                            if not isinstance(floor, dict):
-                                continue
-                            room_name = floor.get("roomName", "")
-                            if room_name == FLOOR_NAME:
-                                pois = floor.get("seatMap", {}).get("POIs", [])
-                                for poi in pois:
-                                    title = poi.get("title", "")
-                                    seat_id = str(poi.get("id", ""))
-                                    if title in TARGET_SEATS:
-                                        seat_map[title] = seat_id
-                                        logger.info("找到座位 %s -> ID %s", title, seat_id)
-                                break
+                    inner2 = sub.get("children", sub)
+                    if isinstance(inner2, dict):
+                        floors = inner2.get("children", [])
+                        if isinstance(floors, list):
+                            for floor in floors:
+                                if not isinstance(floor, dict):
+                                    continue
+                                room_name = floor.get("roomName", "")
+                                _debug(f"  child[{i}][{j}] floor roomName='{room_name}'")
+                                if room_name == FLOOR_NAME:
+                                    pois = floor.get("seatMap", {}).get("POIs", [])
+                                    _debug(f"  找到目标楼层，座位数: {len(pois)}")
+                                    for poi in pois:
+                                        title = poi.get("title", "")
+                                        sid = str(poi.get("id", ""))
+                                        if title in TARGET_SEATS:
+                                            seat_map[title] = sid
+                                            _debug(f"  座位 {title} -> ID {sid}")
 
         if not seat_map:
-            logger.warning("未在搜索结果中找到座位 %s (响应 keys: %s)", TARGET_SEATS, list(resp.keys()))
+            _debug(f"未找到座位 {TARGET_SEATS}")
+            # 保存部分响应用于调试
+            try:
+                resp_str = json.dumps(resp, ensure_ascii=False)[:2000]
+                _debug(f"响应片段: {resp_str}")
+            except Exception:
+                pass
 
-        return seat_map
     except Exception as e:
-        logger.error("搜索座位失败: %s", e)
-        return {}
+        _debug(f"API 搜索座位异常: {e}")
+
+    return seat_map
 
 
-def _check_already_booked(api_client, target_date: datetime.date) -> Dict[str, bool]:
+# ─── 预约逻辑 ─────────────────────────────────────────────────────────────────────
+def _check_already_booked(api_client, target_date) -> Dict[str, bool]:
     """检查指定日期是否已有预约，返回 {座位号: 是否已预约}。"""
     result = {s: False for s in TARGET_SEATS}
     try:
         bookings = api_client.get_my_bookings()
         for b in bookings:
-            if b.get("beginTime") and b["beginTime"].date() == target_date:
-                seat_num = b.get("seatNum", "")
+            bt = b.get("beginTime")
+            if bt is None:
+                continue
+            if bt.date() == target_date:
+                seat_num = str(b.get("seatNum", ""))
                 if seat_num in TARGET_SEATS:
                     status = b.get("status", "")
                     # 状态 0=待签到, 1=已签到, 5=预约中 都算已预约
                     if status in ("0", "1", "5", "6", "7"):
                         result[seat_num] = True
-                        logger.info("座位 %s 在 %s 已有预约 (状态: %s)", seat_num, target_date, status)
+                        _debug(f"座位 {seat_num} 在 {target_date} 已有预约 (状态: {STATUS_MAP.get(status, status)})")
     except Exception as e:
-        logger.warning("检查已有预约失败: %s", e)
+        _debug(f"检查已有预约失败: {e}")
     return result
 
 
 def _do_book_single(api_client, seat_id: str, seat_num: str,
                      booker_uid: str, target_time: datetime) -> Dict:
     """预约单个座位。"""
-    logger.info("预约座位 %s (ID: %s) -> %s", seat_num, seat_id, target_time)
+    _debug(f"预约座位 {seat_num} (ID: {seat_id}) -> {target_time.strftime('%m-%d %H:%M')}")
     try:
         resp = api_client.book_seat(
             begin_time=target_time,
@@ -192,13 +251,13 @@ def _do_book_single(api_client, seat_id: str, seat_num: str,
         )
         code = resp.get("CODE", "")
         if code == "ok":
-            logger.info("座位 %s 预约成功", seat_num)
+            _debug(f"座位 {seat_num} 预约成功")
         else:
             msg = resp.get("MESSAGE", resp.get("msg", str(resp)))
-            logger.warning("座位 %s 预约失败: %s", seat_num, msg)
+            _debug(f"座位 {seat_num} 预约失败: {msg}")
         return resp
     except Exception as e:
-        logger.error("预约座位 %s 异常: %s", seat_num, e)
+        _debug(f"预约座位 {seat_num} 异常: {e}")
         return {"CODE": "error", "MESSAGE": str(e)}
 
 
@@ -208,6 +267,27 @@ def _do_book(state) -> None:
         api = state.api_client
         now = datetime.now()
         results = []
+
+        # 先从缓存获取座位 ID
+        _debug("开始预约流程...")
+        seat_map = _get_seat_ids_from_cache(state)
+
+        # 缓存没找到，尝试 API 搜索
+        if len(seat_map) < len(TARGET_SEATS):
+            _debug("缓存中未找到所有座位，尝试 API 搜索...")
+            tomorrow = (now + timedelta(days=1)).replace(
+                hour=BEGIN_HOUR, minute=0, second=0, microsecond=0
+            )
+            api_seat_map = _search_seats_via_api(api, tomorrow)
+            # 合并结果（API 搜索的优先）
+            seat_map.update(api_seat_map)
+
+        if not seat_map:
+            _auto_state["last_book_result"] = "未找到任何座位 ID"
+            _auto_state["last_error"] = "座位搜索失败"
+            return
+
+        _debug(f"可用座位映射: {seat_map}")
 
         # 确定要预约哪些天
         dates_to_book = []
@@ -225,38 +305,31 @@ def _do_book(state) -> None:
                     )
                 )
                 if now < book_available_at:
-                    logger.info("后天座位需在 %s 后才能预约，跳过", book_available_at)
+                    _debug(f"后天 ({target_date}) 需在 {book_available_at.strftime('%H:%M')} 后才能预约")
                     continue
 
             dates_to_book.append((target_date, target_time))
 
         for target_date, target_time in dates_to_book:
-            logger.info("检查 %s 的预约...", target_date)
+            _debug(f"检查 {target_date} 的预约...")
 
             # 检查是否已预约
             already_booked = _check_already_booked(api, target_date)
             if all(already_booked.values()):
-                logger.info("%s 所有座位已预约，跳过", target_date)
+                _debug(f"{target_date} 所有座位已预约")
                 results.append(f"{target_date}: 已预约")
-                continue
-
-            # 搜索可用座位（获取真实 seat_id）
-            seat_map = _search_seats_for_time(api, target_time)
-            if not seat_map:
-                logger.warning("%s 未找到可用座位", target_date)
-                results.append(f"{target_date}: 未找到座位")
                 continue
 
             # 逐个预约座位（独立预约，互不影响）
             for seat_num in TARGET_SEATS:
                 if already_booked.get(seat_num):
-                    logger.info("座位 %s 在 %s 已预约，跳过", seat_num, target_date)
+                    _debug(f"座位 {seat_num} 在 {target_date} 已预约，跳过")
                     continue
 
                 seat_id = seat_map.get(seat_num)
                 if not seat_id:
-                    logger.warning("座位 %s 未在搜索结果中找到", seat_num)
-                    results.append(f"{target_date} 座位{seat_num}: 未找到")
+                    _debug(f"座位 {seat_num} 无 ID，跳过")
+                    results.append(f"{target_date} 座位{seat_num}: 未找到ID")
                     continue
 
                 # 确定预约人 UID
@@ -272,11 +345,11 @@ def _do_book(state) -> None:
 
         _auto_state["last_book_result"] = "; ".join(results) if results else "无需预约"
         _auto_state["last_error"] = ""
-        logger.info("预约完成: %s", _auto_state["last_book_result"])
+        _debug(f"预约完成: {_auto_state['last_book_result']}")
     except Exception as e:
         _auto_state["last_error"] = str(e)
         _auto_state["last_book_result"] = f"预约异常: {e}"
-        logger.error("预约异常: %s", e)
+        _debug(f"预约异常: {e}")
 
 
 # ─── 签到逻辑 ─────────────────────────────────────────────────────────────────────
@@ -302,9 +375,10 @@ def _do_checkin_for_user(student_id: str, password: str, user_name: str,
         today = datetime.now().date()
         checked_count = 0
         for b in bookings:
-            if not b.get("beginTime"):
+            bt = b.get("beginTime")
+            if bt is None:
                 continue
-            if b["beginTime"].date() != today:
+            if bt.date() != today:
                 continue
             if b.get("status") != "0":
                 continue
@@ -319,12 +393,12 @@ def _do_checkin_for_user(student_id: str, password: str, user_name: str,
                 results.append(f"{user_name} 座位{seat_num}: ❌ {msg}")
 
         if checked_count == 0:
-            results.append(f"{user_name}: 无需签到的预约")
+            results.append(f"{user_name}: 无需签到")
 
         temp_session_mgr.logout()
     except Exception as e:
         results.append(f"{user_name}: ❌ 异常 {e}")
-        logger.error("签到异常 (%s): %s", user_name, e)
+        _debug(f"签到异常 ({user_name}): {e}")
 
     return results
 
@@ -347,13 +421,13 @@ def _do_checkin(state) -> None:
 
     _auto_state["last_checkin_result"] = "; ".join(all_results)
     _auto_state["last_error"] = ""
-    logger.info("签到完成: %s", _auto_state["last_checkin_result"])
+    _debug(f"签到完成: {_auto_state['last_checkin_result']}")
 
 
 # ─── 调度器 ───────────────────────────────────────────────────────────────────────
 def _scheduler_loop(state) -> None:
     """后台调度器：检查是否到触发时间。"""
-    logger.info("调度器已启动")
+    _debug("调度器已启动")
     last_book_date: Optional[str] = None
     last_checkin_date: Optional[str] = None
 
@@ -366,7 +440,7 @@ def _scheduler_loop(state) -> None:
             if (now.hour == AUTO_BOOK_HOUR
                     and now.minute == AUTO_BOOK_MINUTE
                     and last_book_date != today_str):
-                logger.info("触发自动预约")
+                _debug("触发自动预约")
                 last_book_date = today_str
                 threading.Thread(
                     target=_do_book, args=(state,), daemon=True
@@ -376,14 +450,14 @@ def _scheduler_loop(state) -> None:
             if (now.hour == AUTO_CHECKIN_HOUR
                     and now.minute == AUTO_CHECKIN_MINUTE
                     and last_checkin_date != today_str):
-                logger.info("触发自动签到")
+                _debug("触发自动签到")
                 last_checkin_date = today_str
                 threading.Thread(
                     target=_do_checkin, args=(state,), daemon=True
                 ).start()
 
         except Exception as e:
-            logger.error("调度器异常: %s", e)
+            _debug(f"调度器异常: {e}")
 
         # 每 30 秒检查一次
         for _ in range(30):
@@ -392,7 +466,7 @@ def _scheduler_loop(state) -> None:
             import time
             time.sleep(1)
 
-    logger.info("调度器已停止")
+    _debug("调度器已停止")
 
 
 # ─── API 路由 ─────────────────────────────────────────────────────────────────────
@@ -407,6 +481,7 @@ def get_status(request: Request):
         "last_book_result": _auto_state["last_book_result"],
         "last_checkin_result": _auto_state["last_checkin_result"],
         "last_error": _auto_state["last_error"],
+        "debug_log": _auto_state["debug_log"][-20:],  # 最近 20 条
         "target_seats": TARGET_SEATS,
         "room_name": ROOM_NAME,
         "schedule": {
@@ -429,14 +504,16 @@ def get_bookings(request: Request):
     try:
         your_bookings = state.api_client.get_my_bookings()
         for b in your_bookings:
+            bt = b.get("beginTime")
+            et = b.get("endTime")
             all_bookings.append({
                 "user": "我",
                 "roomName": b.get("roomName", ""),
-                "seatNum": b.get("seatNum", ""),
-                "beginTime": b["beginTime"].strftime("%m-%d %H:%M") if b.get("beginTime") else "",
-                "endTime": b["endTime"].strftime("%H:%M") if b.get("endTime") else "",
-                "status": STATUS_MAP.get(b.get("status", ""), b.get("status", "")),
-                "bookingId": b.get("bookingId", ""),
+                "seatNum": str(b.get("seatNum", "")),
+                "beginTime": bt.strftime("%Y-%m-%d %H:%M") if isinstance(bt, datetime) else str(bt or ""),
+                "endTime": et.strftime("%H:%M") if isinstance(et, datetime) else str(et or ""),
+                "status": STATUS_MAP.get(str(b.get("status", "")), str(b.get("status", ""))),
+                "bookingId": str(b.get("bookingId", "")),
             })
     except Exception as e:
         logger.warning("获取你的预约失败: %s", e)
@@ -452,14 +529,16 @@ def get_bookings(request: Request):
             temp_api = LibApiClient(temp_mgr)
             companion_bookings = temp_api.get_my_bookings()
             for b in companion_bookings:
+                bt = b.get("beginTime")
+                et = b.get("endTime")
                 all_bookings.append({
                     "user": "同伴",
                     "roomName": b.get("roomName", ""),
-                    "seatNum": b.get("seatNum", ""),
-                    "beginTime": b["beginTime"].strftime("%m-%d %H:%M") if b.get("beginTime") else "",
-                    "endTime": b["endTime"].strftime("%H:%M") if b.get("endTime") else "",
-                    "status": STATUS_MAP.get(b.get("status", ""), b.get("status", "")),
-                    "bookingId": b.get("bookingId", ""),
+                    "seatNum": str(b.get("seatNum", "")),
+                    "beginTime": bt.strftime("%Y-%m-%d %H:%M") if isinstance(bt, datetime) else str(bt or ""),
+                    "endTime": et.strftime("%H:%M") if isinstance(et, datetime) else str(et or ""),
+                    "status": STATUS_MAP.get(str(b.get("status", "")), str(b.get("status", ""))),
+                    "bookingId": str(b.get("bookingId", "")),
                 })
             temp_mgr.logout()
     except Exception as e:
