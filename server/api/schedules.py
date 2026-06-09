@@ -78,7 +78,11 @@ def delete_schedule(schedule_id: str, request: Request):
     state = _get_state(request)
     schedules = state.config.get_schedules()
 
-    idx = int(schedule_id)
+    try:
+        idx = int(schedule_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"无效的调度索引: {schedule_id}")
+
     if idx < 0 or idx >= len(schedules):
         raise HTTPException(status_code=404, detail=f"调度索引 {idx} 不存在")
 

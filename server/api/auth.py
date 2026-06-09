@@ -95,10 +95,11 @@ def status(request: Request):
 
 @router.post("/logout", response_model=MessageResponse)
 def logout(request: Request):
-    """登出：清空会话信息。"""
+    """登出：清空会话信息并停止后台组件。"""
     state = _get_state(request)
     session_mgr = state.session_mgr
     session_mgr.uid = ""
     session_mgr.name = ""
     session_mgr.session = None
+    state.shutdown()
     return MessageResponse(success=True, message="已登出")

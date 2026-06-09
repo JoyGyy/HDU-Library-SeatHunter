@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import threading
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Request
 
@@ -38,7 +38,7 @@ def list_bookings(request: Request):
         raise HTTPException(status_code=401, detail="尚未登录，请先登录")
 
     result: List[Dict[str, Any]] = []
-    error: str | None = None
+    error: Optional[str] = None
 
     def _fetch():
         nonlocal result, error

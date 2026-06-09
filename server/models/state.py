@@ -92,9 +92,24 @@ class AppState:
         logger.info("登录后组件初始化完成")
 
     def shutdown(self) -> None:
-        """关闭所有后台线程。"""
-        if self.engine and self.engine.is_running:
-            self.engine.stop()
+        """关闭所有后台组件并清理登录状态。"""
+        if self.engine:
+            try:
+                self.engine.stop()
+            except Exception:
+                pass
+            self.engine = None
         if self.room_cache:
-            self.room_cache.stop_background_refresh()
+            try:
+                self.room_cache.stop_background_refresh()
+            except Exception:
+                pass
+            self.room_cache = None
+        if self.runner:
+            try:
+                self.runner.cancel()
+            except Exception:
+                pass
+            self.runner = None
+        self.api_client = None
         logger.info("AppState 已关闭")

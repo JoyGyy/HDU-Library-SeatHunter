@@ -44,9 +44,13 @@ def check_in(booking_id: str, request: Request):
     result = {"success": False, "message": "", "bid": ""}
 
     def _do_checkin():
-        result["success"], result["message"], result["bid"] = (
-            state.api_client.check_in(booking_id)
-        )
+        try:
+            result["success"], result["message"], result["bid"] = (
+                state.api_client.check_in(booking_id)
+            )
+        except Exception as e:
+            result["success"] = False
+            result["message"] = str(e)
 
     t = threading.Thread(target=_do_checkin, daemon=True)
     t.start()
