@@ -25,6 +25,7 @@ def _plan_to_schema(plan: Plan) -> PlanSchema:
     """将 Plan dataclass 转为 PlanSchema Pydantic 模型。"""
     return PlanSchema(
         id=plan.id,
+        name=plan.name,
         room_name=plan.room_name,
         floor_name=plan.floor_name,
         begin_time=plan.begin_time,
@@ -79,6 +80,7 @@ def add_plan(body: AddPlanRequest, request: Request):
         begin_time=body.begin_time,
         duration_hours=body.duration_hours,
         seats=seats,
+        name=body.name,
         target_date=body.target_date,
     )
 

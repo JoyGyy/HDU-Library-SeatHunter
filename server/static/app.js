@@ -162,7 +162,7 @@ async function loadBookings() {
       <div class="card">
         <div class="card-title">${b.room_name || '未知房间'} ${b.seat_num ? '- ' + b.seat_num + ' 号座' : ''}</div>
         <div class="card-info">
-          时间: ${b.begin_time || '-'} ~ ${b.end_time || '-'}<br>
+          时间: ${formatTime(b.begin_time)} ~ ${formatTime(b.end_time)}<br>
           状态: <span class="status-badge ${getStatusClass(b.status)}">${b.status || '-'}</span>
           ${b.booking_id ? '<br>ID: ' + b.booking_id : ''}
         </div>
@@ -182,6 +182,18 @@ function getStatusClass(status) {
   if (status.includes('成功') || status.includes('confirmed')) return 'success';
   if (status.includes('待') || status.includes('pending')) return 'pending';
   return 'error';
+}
+
+function formatTime(t) {
+  if (!t) return '-';
+  // ISO datetime → HH:MM
+  if (typeof t === 'string' && t.includes('T')) {
+    try {
+      const d = new Date(t);
+      return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+    } catch { return t; }
+  }
+  return t;
 }
 
 async function doCheckin(bookingId) {
@@ -274,8 +286,9 @@ async function onFloorChange() {
   try {
     const data = await request('GET', `/rooms/${encodeURIComponent(room)}/floors/${encodeURIComponent(floor)}/seats`);
     (data.seats || []).forEach(s => {
-      const label = s.title || s.seatNum || s.id;
-      seatSelect.innerHTML += `<option value="${s.id}">${label}</option>`;
+      const label = s.title || s.seatNum || s.seat_num || s.id || s.seatId || '未知';
+      const value = s.id || s.seatId || s.seat_id || '';
+      seatSelect.innerHTML += `<option value="${value}">${label}</option>`;
     });
   } catch (err) {
     showToast('加载座位失败: ' + err.message);

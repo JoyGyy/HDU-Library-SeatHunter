@@ -123,6 +123,7 @@ class SeatInfoSchema(BaseModel):
 class PlanSchema(BaseModel):
     """预约方案。"""
     id: str
+    name: str = ""
     room_name: str
     floor_name: str = ""
     begin_time: str = Field(..., description="HH:MM:SS 格式")
@@ -141,6 +142,7 @@ class PlanListResponse(BaseModel):
 class AddPlanRequest(BaseModel):
     """添加方案请求。"""
     id: str
+    name: str = ""
     room_name: str
     floor_name: str = ""
     begin_time: str

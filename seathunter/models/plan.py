@@ -42,6 +42,7 @@ class Plan:
     begin_time: str  # HH:MM:SS format, e.g. "08:00:00"
     duration_hours: int
     seats: List[SeatInfo] = field(default_factory=list)
+    name: str = ""   # 方案名称
     target_date: str = ""  # YYYY-MM-DD format, empty means use schedule date or today
     booking_id: str = ""   # 新增：预约成功后的 bookingId，用于签到
 
@@ -64,6 +65,8 @@ class Plan:
             "duration_hours": self.duration_hours,
             "seats": [s.to_dict() for s in self.seats],
         }
+        if self.name:
+            d["name"] = self.name
         if self.target_date:
             d["target_date"] = self.target_date
         if self.booking_id:
@@ -80,6 +83,7 @@ class Plan:
             begin_time=data["begin_time"],
             duration_hours=int(data["duration_hours"]),
             seats=seats,
+            name=data.get("name", ""),
             target_date=data.get("target_date", ""),
             booking_id=data.get("booking_id", ""),
         )
