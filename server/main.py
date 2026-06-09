@@ -51,8 +51,8 @@ def on_startup() -> None:
         import time
         time.sleep(2)  # 等待服务器完全启动
         try:
-            from server.api.auto import USER_CONFIG, _scheduler_running
-            from server.api.auto import start_scheduler as _start_scheduler
+            from server.api.auto import USER_CONFIG, _scheduler_running, _scheduler_loop, _stop_event, _auto_state
+            import server.api.auto as auto_module
 
             # 自动登录
             state.config.update_user_info(
@@ -64,6 +64,16 @@ def on_startup() -> None:
             if success:
                 state.init_after_login()
                 logger.info("自动登录成功: %s", state.session_mgr.name)
+
+                # 设置 auto 模块的 state 引用
+                auto_module._auto_state = state
+
+                # 启动调度器
+                if not _scheduler_running:
+                    _stop_event.clear()
+                    auto_module._scheduler_running = True
+                    threading.Thread(target=_scheduler_loop, daemon=True, name="AutoScheduler").start()
+                    logger.info("自动调度已启动")
             else:
                 logger.error("自动登录失败: %s", err_type)
         except Exception as e:

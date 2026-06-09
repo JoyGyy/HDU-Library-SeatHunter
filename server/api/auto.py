@@ -154,11 +154,14 @@ def _do_checkin(state) -> Dict[str, Any]:
             booking_id = b.get("booking_id") or b.get("bookingId") or b.get("id")
             if booking_id:
                 try:
-                    state.api_client.check_in(booking_id)
-                    success_count += 1
-                    logger.info("签到成功: %s", booking_id)
+                    ok, msg, _ = state.api_client.check_in(booking_id)
+                    if ok:
+                        success_count += 1
+                        logger.info("签到成功: %s", booking_id)
+                    else:
+                        logger.warning("签到失败 %s: %s", booking_id, msg)
                 except Exception as e:
-                    logger.warning("签到失败 %s: %s", booking_id, e)
+                    logger.warning("签到异常 %s: %s", booking_id, e)
 
         _last_checkin_result = f"签到完成: {success_count}/{len(bookings)} 成功"
         logger.info(_last_checkin_result)
