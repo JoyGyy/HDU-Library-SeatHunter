@@ -35,9 +35,15 @@ COMPANION_UID = "305033"
 # 固定座位（SeatInfo 的 title 字段，即座位号）
 TARGET_SEATS = ["99", "100"]
 
+# 已知座位 ID（兜底用，优先从 API 获取）
+KNOWN_SEAT_IDS = {
+    "99": "60810",
+    "100": "60811",
+}
+
 # 固定房间和楼层
 ROOM_NAME = "自习室"
-FLOOR_NAME = "二楼西"
+FLOOR_NAME = "比特庭园（二楼西）"
 
 # 固定时间：10:00 开始，12 小时
 BEGIN_HOUR = 10
@@ -138,6 +144,12 @@ def _get_seat_ids_from_cache(state) -> Dict[str, str]:
         _debug(f"未找到目标座位，样本: {sample}")
 
     return seat_map
+
+
+def _get_seat_ids_fallback() -> Dict[str, str]:
+    """使用硬编码的座位 ID 作为兜底。"""
+    _debug(f"使用硬编码座位 ID: {KNOWN_SEAT_IDS}")
+    return dict(KNOWN_SEAT_IDS)
 
 
 def _search_seats_via_api(api_client, target_time: datetime) -> Dict[str, str]:
@@ -305,6 +317,14 @@ def _do_book(state) -> None:
             api_seat_map = _search_seats_via_api(api, tomorrow)
             # 合并结果（API 搜索的优先）
             seat_map.update(api_seat_map)
+
+        # 最后兜底：使用硬编码 ID
+        if len(seat_map) < len(TARGET_SEATS):
+            _debug("API 搜索也未找到所有座位，使用硬编码 ID")
+            fallback = _get_seat_ids_fallback()
+            for s in TARGET_SEATS:
+                if s not in seat_map:
+                    seat_map[s] = fallback[s]
 
         if not seat_map:
             _auto_state["last_book_result"] = "未找到任何座位 ID"
