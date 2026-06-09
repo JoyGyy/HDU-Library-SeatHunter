@@ -12,7 +12,7 @@ import { getAuthStatus, login, setBaseURL } from '../api/client'
 export default function HomeScreen() {
   const [loggedIn, setLoggedIn] = useState(false)
   const [userName, setUserName] = useState('')
-  const [serverIP, setServerIP] = useState('192.168.1.100')
+  const [serverURL, setServerURL] = useState('https://legwarmer-favorably-musty.ngrok-free.dev')
   const [studentId, setStudentId] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
@@ -32,7 +32,7 @@ export default function HomeScreen() {
   }
 
   const handleLogin = async () => {
-    setBaseURL(`http://${serverIP}:8000`)
+    setBaseURL(serverURL)
     setLoading(true)
     try {
       const resp = await login(studentId, password)
@@ -43,8 +43,9 @@ export default function HomeScreen() {
       } else {
         Alert.alert('失败', resp.data.message)
       }
-    } catch {
-      Alert.alert('错误', '无法连接后端，请检查 IP 地址')
+    } catch (err: any) {
+      const detail = err?.message || String(err)
+      Alert.alert('连接失败', `无法连接后端\n${detail}`)
     }
     setLoading(false)
   }
@@ -55,10 +56,12 @@ export default function HomeScreen() {
         <Text style={styles.title}>HDU 图书馆抢座</Text>
         <TextInput
           style={styles.input}
-          placeholder="后端 IP"
-          value={serverIP}
-          onChangeText={setServerIP}
+          placeholder="后端地址"
+          value={serverURL}
+          onChangeText={setServerURL}
           placeholderTextColor="#666"
+          autoCapitalize="none"
+          autoCorrect={false}
         />
         <TextInput
           style={styles.input}

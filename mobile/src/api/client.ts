@@ -1,6 +1,6 @@
 import axios from 'axios'
 
-const BASE_URL = 'http://10.249.58.108:8000'
+const BASE_URL = 'https://legwarmer-favorably-musty.ngrok-free.dev'
 
 const api = axios.create({
   baseURL: BASE_URL,
@@ -18,9 +18,9 @@ export const login = (studentId: string, password: string) =>
 export const getAuthStatus = () => api.get('/api/auth/status')
 
 export const checkIn = (bookingId: string) =>
-  api.post(`/api/checkin/${bookingId}`)
+  api.post(`/api/checkin/do/${bookingId}`)
 
-export const getCurrentBookings = () => api.get('/api/checkin/bookings')
+export const getCurrentBookings = () => api.get('/api/bookings')
 
 export const getFriends = () => api.get('/api/friends')
 

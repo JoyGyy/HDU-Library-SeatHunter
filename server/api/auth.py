@@ -44,10 +44,7 @@ def login(body: LoginRequest, request: Request):
         session_mgr = state.session_mgr
 
         # 保存请求的学号密码到配置
-        user_info = state.config.get_user_info()
-        user_info["login_name"] = body.student_id
-        user_info["password"] = body.password
-        state.config.set_user_info(user_info)
+        state.config.update_user_info(login_name=body.student_id, password=body.password)
 
         # 重新初始化 session（使用新凭证）
         session_mgr.init_session()
