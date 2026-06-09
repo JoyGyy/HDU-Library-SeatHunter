@@ -51,31 +51,36 @@ def on_startup() -> None:
         import time
         time.sleep(2)  # 等待服务器完全启动
         try:
-            from server.api.auto import USER_CONFIG, _scheduler_running, _scheduler_loop, _stop_event, _auto_state
+            from server.api.auto import (
+                USER_STUDENT_ID, USER_PASSWORD,
+                _auto_state, _scheduler_loop,
+            )
             import server.api.auto as auto_module
 
             # 自动登录
             state.config.update_user_info(
-                login_name=USER_CONFIG["student_id"],
-                password=USER_CONFIG["password"],
+                login_name=USER_STUDENT_ID,
+                password=USER_PASSWORD,
             )
             state.session_mgr.init_session()
             success, err_type = state.session_mgr.login()
             if success:
                 state.init_after_login()
                 logger.info("自动登录成功: %s", state.session_mgr.name)
-
-                # 设置 auto 模块的 state 引用
-                auto_module._auto_state = state
+                auto_module._auto_state["logged_in"] = True
+                auto_module._auto_state["student_id"] = USER_STUDENT_ID
 
                 # 启动调度器
-                if not _scheduler_running:
-                    _stop_event.clear()
-                    auto_module._scheduler_running = True
-                    threading.Thread(target=_scheduler_loop, daemon=True, name="AutoScheduler").start()
+                if not auto_module._auto_state["running"]:
+                    auto_module._auto_state["running"] = True
+                    threading.Thread(
+                        target=_scheduler_loop, args=(state,),
+                        daemon=True, name="AutoScheduler"
+                    ).start()
                     logger.info("自动调度已启动")
             else:
                 logger.error("自动登录失败: %s", err_type)
+                auto_module._auto_state["last_error"] = f"登录失败: {err_type}"
         except Exception as e:
             logger.error("自动初始化失败: %s", e)
 
@@ -84,8 +89,8 @@ def on_startup() -> None:
 
 @app.on_event("shutdown")
 def on_shutdown() -> None:
-    from server.api.auto import stop_scheduler
-    stop_scheduler()
+    import server.api.auto as auto_module
+    auto_module._auto_state["running"] = False
     state.shutdown()
 
 
