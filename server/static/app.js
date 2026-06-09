@@ -383,6 +383,7 @@ async function loadSchedules() {
 
 async function showAddSchedule() {
   $('add-schedule-modal').classList.remove('hidden');
+  $('schedule-type').value = 'weekdays';
   $('schedule-date-group').classList.add('hidden');
   $('schedule-weekday-group').classList.remove('hidden');
   $('schedule-time').value = '07:30';
@@ -405,7 +406,7 @@ function hideAddSchedule() {
 
 function onScheduleTypeChange() {
   const type = $('schedule-type').value;
-  if (type === 'weekday') {
+  if (type === 'weekdays') {
     $('schedule-weekday-group').classList.remove('hidden');
     $('schedule-date-group').classList.add('hidden');
   } else {
@@ -433,7 +434,7 @@ async function addSchedule() {
     mappings: [],
   };
 
-  if (type === 'weekday') {
+  if (type === 'weekdays') {
     body.target_weekdays = [parseInt($('schedule-weekday').value)];
   } else {
     const dateVal = $('schedule-date').value;
