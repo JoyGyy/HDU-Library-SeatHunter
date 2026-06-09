@@ -83,7 +83,7 @@ def playwright_login(username: str, password: str, library_url: str,
             username_input = None
             for selector in username_selectors:
                 try:
-                    username_input = await page.wait_for_selector(selector, timeout=10000)
+                    username_input = await page.wait_for_selector(selector, timeout=5000)
                     if username_input:
                         break
                 except Exception:
@@ -92,7 +92,7 @@ def playwright_login(username: str, password: str, library_url: str,
             if not username_input:
                 try:
                     username_input = await page.wait_for_selector(
-                        ",".join(username_selectors), timeout=20000
+                        ",".join(username_selectors), timeout=10000
                     )
                 except Exception:
                     pass
@@ -142,7 +142,7 @@ def playwright_login(username: str, password: str, library_url: str,
                 'button:has-text("登录")',
             ]:
                 try:
-                    login_btn = await page.wait_for_selector(selector, timeout=5000)
+                    login_btn = await page.wait_for_selector(selector, timeout=3000)
                     if login_btn:
                         break
                 except Exception:
@@ -167,9 +167,9 @@ def playwright_login(username: str, password: str, library_url: str,
 
             logger.info("Waiting for login completion...")
             try:
-                await page.wait_for_url("**/huitu.zhishulib.com/**", timeout=30000)
+                await page.wait_for_url("**/huitu.zhishulib.com/**", timeout=15000)
             except Exception:
-                await asyncio.sleep(3)
+                await asyncio.sleep(2)
 
             current_url = page.url
             if "huitu.zhishulib.com" not in current_url:
@@ -193,11 +193,11 @@ def playwright_login(username: str, password: str, library_url: str,
             all_cookies = await context.cookies()
             lib_cookies = [c for c in all_cookies if "huitu.zhishulib.com" in c.get("domain", "")]
 
-            # Get user info (retry up to 3 times)
+            # Get user info (retry up to 2 times)
             logger.info("Fetching user info...")
             uid = ""
             name = ""
-            for attempt in range(3):
+            for attempt in range(2):
                 try:
                     resp_text = await page.evaluate("""async () => {
                         const resp = await fetch("/Seat/Index/searchSeats?space_category[category_id]=591&space_category[content_id]=3&LAB_JSON=1");
@@ -211,8 +211,8 @@ def playwright_login(username: str, password: str, library_url: str,
                         break
                 except Exception as e:
                     logger.warning("获取用户信息失败 (第%d次): %s", attempt + 1, e)
-                if attempt < 2:
-                    await asyncio.sleep(2)
+                if attempt < 1:
+                    await asyncio.sleep(1)
 
             if not uid:
                 for c in lib_cookies:
