@@ -152,6 +152,51 @@ def _get_seat_ids_fallback() -> Dict[str, str]:
     return dict(KNOWN_SEAT_IDS)
 
 
+def _ensure_session(state) -> bool:
+    """确保 session 有效，过期则重新登录。返回是否可用。"""
+    if state.api_client is None:
+        _debug("api_client 为空，尝试重新登录...")
+        return _do_relogin(state)
+
+    # 用一个轻量请求验证 session
+    try:
+        resp = state.api_client.session.get(
+            url=state.api_client.base_url + "/Seat/Index/myBookingList",
+            timeout=15,
+            allow_redirects=False,
+        )
+        # 如果返回重定向到 CAS 登录，说明 session 过期
+        if resp.status_code in (301, 302) or "CASLogin" in resp.text[:500]:
+            _debug("Session 已过期，重新登录...")
+            return _do_relogin(state)
+        if resp.status_code != 200:
+            _debug(f"Session 验证异常: HTTP {resp.status_code}")
+            return _do_relogin(state)
+        return True
+    except Exception as e:
+        _debug(f"Session 验证失败: {e}")
+        return _do_relogin(state)
+
+
+def _do_relogin(state) -> bool:
+    """重新登录。返回是否成功。"""
+    try:
+        _debug("执行重新登录...")
+        success, err = state.session_mgr.relogin()
+        if success:
+            state.init_after_login()
+            _auto_state["logged_in"] = True
+            _debug("重新登录成功")
+            return True
+        else:
+            _auto_state["logged_in"] = False
+            _debug(f"重新登录失败: {err}")
+            return False
+    except Exception as e:
+        _debug(f"重新登录异常: {e}")
+        return False
+
+
 def _search_seats_via_api(api_client, target_time: datetime) -> Dict[str, str]:
     """通过 API 搜索座位（备用方案）。返回 {座位号: seat_id}。"""
     seat_map: Dict[str, str] = {}
@@ -300,6 +345,11 @@ def _do_book_single(api_client, seat_id: str, seat_num: str,
 def _do_book(state) -> None:
     """预约逻辑：预约今天/明天/后天的座位。"""
     try:
+        # 确保 session 有效
+        if not _ensure_session(state):
+            _auto_state["last_book_result"] = "预约失败: 无法登录"
+            return
+
         api = state.api_client
         now = datetime.now()
         results = []
@@ -449,6 +499,11 @@ def _do_checkin_for_user(student_id: str, password: str, user_name: str,
 
 def _do_checkin(state) -> None:
     """签到逻辑：签到你和同伴的预约。"""
+    # 确保 session 有效
+    if not _ensure_session(state):
+        _auto_state["last_checkin_result"] = "签到失败: 无法登录"
+        return
+
     all_results = []
 
     # 签到你的预约
@@ -540,7 +595,9 @@ def get_bookings(request: Request):
     """获取你和同伴的预约列表。"""
     state = _get_state(request)
     if state.api_client is None:
-        raise HTTPException(status_code=401, detail="尚未登录")
+        # 尝试重新登录
+        if not _do_relogin(state):
+            raise HTTPException(status_code=401, detail="尚未登录")
 
     all_bookings: List[Dict[str, Any]] = []
 
