@@ -428,7 +428,11 @@ def _do_book(state) -> None:
 
             dates_to_book.append((target_date, target_time))
 
-        for target_date, target_time in dates_to_book:
+        for date_idx, (target_date, target_time) in enumerate(dates_to_book):
+            if date_idx > 0:
+                _debug("等待 5 秒后预约下一天...")
+                import time
+                time.sleep(5)
             _debug(f"检查 {target_date} 的预约...")
 
             # 检查是否已预约
@@ -438,8 +442,12 @@ def _do_book(state) -> None:
                 results.append(f"{target_date}: 已预约")
                 continue
 
-            # 逐个预约座位（独立预约，互不影响）
-            for seat_num in TARGET_SEATS:
+            # 逐个预约座位（独立预约，互不影响，间隔5秒防封号）
+            for idx, seat_num in enumerate(TARGET_SEATS):
+                if idx > 0:
+                    _debug("等待 5 秒后预约下一个座位...")
+                    import time
+                    time.sleep(5)
                 if already_booked.get(seat_num):
                     _debug(f"座位 {seat_num} 在 {target_date} 已预约，跳过")
                     continue
