@@ -165,13 +165,20 @@ def _ensure_session(state) -> bool:
             timeout=15,
             allow_redirects=False,
         )
+        _debug(f"Session 验证: HTTP {resp.status_code}, 长度={len(resp.text)}")
         # 如果返回重定向到 CAS 登录，说明 session 过期
-        if resp.status_code in (301, 302) or "CASLogin" in resp.text[:500]:
+        if resp.status_code in (301, 302):
+            location = resp.headers.get("Location", "")
+            _debug(f"Session 重定向到: {location[:100]}")
             _debug("Session 已过期，重新登录...")
+            return _do_relogin(state)
+        if "CASLogin" in resp.text[:500]:
+            _debug("Session 返回 CAS 登录页，重新登录...")
             return _do_relogin(state)
         if resp.status_code != 200:
             _debug(f"Session 验证异常: HTTP {resp.status_code}")
             return _do_relogin(state)
+        _debug("Session 有效")
         return True
     except Exception as e:
         _debug(f"Session 验证失败: {e}")
@@ -320,8 +327,8 @@ def _check_already_booked(api_client, target_date) -> Dict[str, bool]:
 
 
 def _do_book_single(api_client, seat_id: str, seat_num: str,
-                     booker_uid: str, target_time: datetime) -> Dict:
-    """预约单个座位。"""
+                     booker_uid: str, target_time: datetime, state=None) -> Dict:
+    """预约单个座位，失败时自动重试登录。"""
     _debug(f"预约座位 {seat_num} (ID: {seat_id}) -> {target_time.strftime('%m-%d %H:%M')}")
     try:
         resp = api_client.book_seat(
@@ -330,6 +337,23 @@ def _do_book_single(api_client, seat_id: str, seat_num: str,
             seat_ids=[seat_id],
             booker_uids=[booker_uid],
         )
+
+        # 检查是否是 CAS 重定向（session 过期）
+        if isinstance(resp, dict) and resp.get("ui_type") == "com.Redirect":
+            _debug(f"座位 {seat_num} 遇到 CAS 重定向，尝试重新登录...")
+            if state and _do_relogin(state):
+                # 重新登录后重试
+                api_client = state.api_client
+                resp = api_client.book_seat(
+                    begin_time=target_time,
+                    duration_hours=DURATION_HOURS,
+                    seat_ids=[seat_id],
+                    booker_uids=[booker_uid],
+                )
+            else:
+                _debug(f"重新登录失败，无法预约座位 {seat_num}")
+                return resp
+
         code = resp.get("CODE", "")
         if code == "ok":
             _debug(f"座位 {seat_num} 预约成功")
@@ -429,7 +453,7 @@ def _do_book(state) -> None:
                 # 确定预约人 UID
                 booker_uid = COMPANION_UID if seat_num == "99" else USER_UID
 
-                resp = _do_book_single(api, seat_id, seat_num, booker_uid, target_time)
+                resp = _do_book_single(api, seat_id, seat_num, booker_uid, target_time, state=state)
                 code = resp.get("CODE", "")
                 msg = resp.get("MESSAGE", resp.get("msg", ""))
                 if code == "ok":
