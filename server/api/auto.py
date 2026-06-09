@@ -48,6 +48,24 @@ def _get_state(request: Request):
     return request.app.state.seathunter
 
 
+# 预约状态映射
+STATUS_MAP = {
+    "0": "待签到",
+    "1": "已签到",
+    "2": "已结束",
+    "3": "已取消",
+    "4": "已过期",
+    "5": "预约中",
+    "6": "待确认",
+    "7": "已确认",
+}
+
+
+def _translate_status(status: str) -> str:
+    """将状态码转为中文。"""
+    return STATUS_MAP.get(str(status), f"状态{status}")
+
+
 def _format_time(dt: datetime) -> str:
     return dt.strftime("%H:%M:%S")
 
@@ -240,12 +258,13 @@ def get_bookings(request: Request):
         bookings = state.api_client.get_my_bookings()
         result = []
         for b in bookings:
+            raw_status = str(b.get("status", ""))
             result.append({
                 "booking_id": b.get("booking_id") or b.get("bookingId") or b.get("id"),
                 "room_name": b.get("room_name") or b.get("roomName") or ROOM_NAME,
                 "seat_num": b.get("seat_num") or b.get("seatNum") or "",
                 "time_range": f"{b.get('begin_time') or b.get('beginTime') or ''} ~ {b.get('end_time') or b.get('endTime') or ''}",
-                "status": b.get("status", ""),
+                "status": _translate_status(raw_status),
                 "user_name": state.session_mgr.name or "",
             })
         return {"bookings": result}
