@@ -12,7 +12,7 @@ import { getAuthStatus, login, setBaseURL } from '../api/client'
 export default function HomeScreen() {
   const [loggedIn, setLoggedIn] = useState(false)
   const [userName, setUserName] = useState('')
-  const [serverURL, setServerURL] = useState('https://legwarmer-favorably-musty.ngrok-free.dev')
+  const [serverURL, setServerURL] = useState('https://hdu-library-seathunter-production.up.railway.app')
   const [studentId, setStudentId] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)

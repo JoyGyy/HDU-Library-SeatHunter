@@ -1,6 +1,6 @@
 import axios from 'axios'
 
-const BASE_URL = 'https://legwarmer-favorably-musty.ngrok-free.dev'
+const BASE_URL = 'https://hdu-library-seathunter-production.up.railway.app'
 
 const api = axios.create({
   baseURL: BASE_URL,
