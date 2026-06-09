@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>HDU 图书馆抢座</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div id="app">
+    <!-- 登录页面 -->
+    <div id="login-page" class="page">
+      <div class="header">
+        <h1>📚 HDU 图书馆抢座</h1>
+        <p class="subtitle">杭州电子科技大学图书馆座位预约</p>
+      </div>
+      <div class="form-group">
+        <input type="text" id="student-id" placeholder="学号" autocomplete="username">
+      </div>
+      <div class="form-group">
+        <input type="password" id="password" placeholder="密码" autocomplete="current-password">
+      </div>
+      <button id="login-btn" class="btn primary" onclick="handleLogin()">登 录</button>
+      <div id="login-error" class="error-msg"></div>
+    </div>
+
+    <!-- 主页面 -->
+    <div id="main-page" class="page hidden">
+      <div class="header">
+        <h1>📚 HDU 图书馆抢座</h1>
+        <p class="subtitle" id="user-name">已登录</p>
+      </div>
+
+      <!-- 底部导航 -->
+      <nav class="tab-bar">
+        <button class="tab active" data-tab="bookings" onclick="switchTab('bookings')">
+          <span class="tab-icon">📋</span>
+          <span>预约</span>
+        </button>
+        <button class="tab" data-tab="friends" onclick="switchTab('friends')">
+          <span class="tab-icon">👥</span>
+          <span>好友</span>
+        </button>
+        <button class="tab" data-tab="settings" onclick="switchTab('settings')">
+          <span class="tab-icon">⚙️</span>
+          <span>设置</span>
+        </button>
+      </nav>
+
+      <!-- 预约页面 -->
+      <div id="tab-bookings" class="tab-content active">
+        <div class="section">
+          <div class="section-header">
+            <h2>当前预约</h2>
+            <button class="btn small" onclick="loadBookings()">刷新</button>
+          </div>
+          <div id="bookings-list" class="card-list">
+            <div class="loading">加载中...</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 好友页面 -->
+      <div id="tab-friends" class="tab-content">
+        <div class="section">
+          <div class="section-header">
+            <h2>好友列表</h2>
+            <button class="btn small primary" onclick="showAddFriend()">添加</button>
+          </div>
+          <div id="friends-list" class="card-list">
+            <div class="loading">加载中...</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 设置页面 -->
+      <div id="tab-settings" class="tab-content">
+        <div class="section">
+          <h2>账号</h2>
+          <div class="setting-item">
+            <span id="settings-user-name">-</span>
+            <button class="btn danger" onclick="handleLogout()">退出登录</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 添加好友弹窗 -->
+    <div id="add-friend-modal" class="modal hidden">
+      <div class="modal-content">
+        <h3>添加好友</h3>
+        <div class="form-group">
+          <input type="text" id="friend-id" placeholder="好友学号">
+        </div>
+        <div class="form-group">
+          <input type="password" id="friend-password" placeholder="好友密码">
+        </div>
+        <div class="modal-actions">
+          <button class="btn" onclick="hideAddFriend()">取消</button>
+          <button class="btn primary" onclick="addFriend()">添加</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toast 提示 -->
+    <div id="toast" class="toast hidden"></div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

@@ -13,6 +13,8 @@ if _project_root not in sys.path:
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 
 # 初始化日志
 logging.basicConfig(
@@ -45,9 +47,15 @@ def on_shutdown() -> None:
     state.shutdown()
 
 
+# 挂载静态文件
+static_dir = os.path.join(os.path.dirname(__file__), "static")
+app.mount("/static", StaticFiles(directory=static_dir), name="static")
+
+
 @app.get("/")
 def root():
-    return {"name": "HDU Library SeatHunter API", "version": "1.0.0"}
+    """返回前端页面。"""
+    return FileResponse(os.path.join(static_dir, "index.html"))
 
 
 # 注册路由
