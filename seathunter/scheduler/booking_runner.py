@@ -133,9 +133,10 @@ class BookingRunner:
 
                 logger.warning("Plan %s failed: %s", plan.id, result.message)
 
-                # 不可重试的错误：已有预约
-                if "已有预约" in result.message or "请勿重复" in result.message:
-                    logger.info("已有预约，无需重试，停止当前方案的预约")
+                # 不可重试的错误：已有预约 或 座位不可用
+                non_retryable = ["已有预约", "请勿重复", "无法预约", "不可用", "锁定", "占用"]
+                if any(kw in result.message for kw in non_retryable):
+                    logger.info("不可重试的错误，停止: %s", result.message)
                     return results
 
                 if self._cancelled:

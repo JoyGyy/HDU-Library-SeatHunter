@@ -65,6 +65,7 @@ class SchedulerEngine:
         self._checkin_lock = threading.Lock()
         self._active_checkin_runners: List[CheckInRunner] = []
         self._checkin_runners_lock = threading.Lock()
+        self._completed_triggers: set = set()  # 已执行过的触发 (trigger_time, target_date)
 
         # 设置好友确认回调
         def _friend_confirm(booking_id, friend_uid):
@@ -101,6 +102,7 @@ class SchedulerEngine:
 
         self._stop_event.clear()
         self._cancel_booking.clear()
+        self._completed_triggers.clear()
         with self._state_lock:
             self._running = True
 
@@ -301,6 +303,12 @@ class SchedulerEngine:
                 if self._stop_event.is_set():
                     break
 
+                # 检查此触发是否已执行过（防止重复触发）
+                trigger_key = (trigger_time, target_date.date())
+                if trigger_key in self._completed_triggers:
+                    self._stop_event.wait(timeout=30.0)
+                    continue
+
                 # Booking phase - execute for each grouped trigger's plans
                 logger.info("Trigger time reached (%d schedule(s)), booking for %s (%s)",
                            len(grouped),
@@ -327,6 +335,9 @@ class SchedulerEngine:
                         logger.info("Booking result: %s", r)
                     else:
                         logger.warning("Booking result: %s", r)
+
+                # 标记此触发已执行，防止重复
+                self._completed_triggers.add(trigger_key)
 
                 # After booking, loop back to find next trigger
                 # Brief pause to avoid tight loop
