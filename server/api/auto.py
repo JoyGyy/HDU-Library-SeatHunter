@@ -1,4 +1,12 @@
-"""自动预约和签到路由：定时任务 + 手动触发。"""
+"""全自动预约与签到模块。
+
+固定配置：你和同伴的账号、座位、时间。
+- 预约：每天 20:00 自动预约后天的座位（99号+100号）
+- 签到：每天 9:30 自动签到
+- 支持预约今天/明天/后天的座位（后天需20:00后）
+- 已预约的日期不重复预约
+- 99号和100号独立预约，互不影响
+"""
 
 from __future__ import annotations
 
@@ -9,50 +17,38 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Request
 
-from server.models.schemas import MessageResponse
-
 logger = logging.getLogger("seathunter.server")
-
 router = APIRouter()
 
-# 固定配置
-USER_CONFIG = {
-    "student_id": "23051110",
-    "password": "@Krz201314",
-    "uid": "303687",
-    "name": "joygy",
-}
+# ─── 固定配置 ────────────────────────────────────────────────────────────────────
+# 你的账号
+USER_STUDENT_ID = "23051110"
+USER_PASSWORD = "@Krz201314"
+USER_UID = "303687"
 
-COMPANION_CONFIG = {
-    "student_id": "23140322",
-    "password": "Pangzidan0713#",
-    "uid": "305033",
-    "name": "同伴",
-}
+# 同伴的账号
+COMPANION_STUDENT_ID = "23140322"
+COMPANION_PASSWORD = "Pangzidan0713#"
+COMPANION_UID = "305033"
 
+# 固定座位（SeatInfo 的 title 字段，即座位号）
+TARGET_SEATS = ["99", "100"]
+
+# 固定房间和楼层
 ROOM_NAME = "自习室二楼西"
-SEAT_IDS = ["99", "100"]  # 99号=同伴, 100号=用户
-BEGIN_TIME = "10:00:00"
+FLOOR_NAME = "二楼西"
+
+# 固定时间：10:00 开始，12 小时
+BEGIN_HOUR = 10
 DURATION_HOURS = 12
 
-# 调度配置
-BOOK_HOUR = 20  # 每晚8点预约
-CHECKIN_HOUR = 9  # 每天9点
-CHECKIN_MINUTE = 30  # 9:30签到
+# 自动触发时间
+AUTO_BOOK_HOUR = 20  # 每天 20:00 预约
+AUTO_BOOK_MINUTE = 0
+AUTO_CHECKIN_HOUR = 9  # 每天 9:30 签到
+AUTO_CHECKIN_MINUTE = 30
 
-# 全局状态
-_scheduler_running = False
-_scheduler_thread: Optional[threading.Thread] = None
-_stop_event = threading.Event()
-_last_book_result = ""
-_last_checkin_result = ""
-
-
-def _get_state(request: Request):
-    return request.app.state.seathunter
-
-
-# 预约状态映射
+# 状态码中文映射
 STATUS_MAP = {
     "0": "待签到",
     "1": "已签到",
@@ -65,309 +61,415 @@ STATUS_MAP = {
 }
 
 
-def _translate_status(status: str) -> str:
-    """将状态码转为中文。"""
-    return STATUS_MAP.get(str(status), f"状态{status}")
+# ─── 全局状态 ─────────────────────────────────────────────────────────────────────
+_auto_state: Dict[str, Any] = {
+    "running": False,
+    "logged_in": False,
+    "student_id": USER_STUDENT_ID,
+    "last_book_result": "",
+    "last_checkin_result": "",
+    "last_error": "",
+}
 
 
-def _format_time(dt: datetime) -> str:
-    return dt.strftime("%H:%M:%S")
+def _get_state(request: Request):
+    return request.app.state.seathunter
 
 
-def _get_next_trigger(hour: int, minute: int = 0) -> datetime:
-    """获取下次触发时间。"""
-    now = datetime.now()
-    target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-    if target <= now:
-        target += timedelta(days=1)
-    return target
-
-
-def _do_book(state) -> Dict[str, Any]:
-    """执行预约：为用户和同伴预约后天的座位。"""
-    global _last_book_result
+# ─── 预约逻辑 ─────────────────────────────────────────────────────────────────────
+def _search_seats_for_time(api_client, target_time: datetime) -> Dict[str, Any]:
+    """搜索指定时间的座位，返回座位号 -> 真实 seat_id 的映射。"""
     try:
-        if state.api_client is None:
-            _last_book_result = "未登录，无法预约"
-            return {"success": False, "message": _last_book_result}
+        # 获取房间信息
+        rooms = api_client.query_rooms()
+        if ROOM_NAME not in rooms:
+            logger.error("房间 '%s' 未找到", ROOM_NAME)
+            return {}
 
-        # 计算后天日期
-        target_date = (datetime.now() + timedelta(days=2)).strftime("%Y-%m-%d")
-        begin_dt = datetime.strptime(f"{target_date} {BEGIN_TIME}", "%Y-%m-%d %H:%M:%S")
+        room_data = rooms[ROOM_NAME]
+        category_id = room_data["space_category"]["category_id"]
+        content_id = room_data["space_category"]["content_id"]
 
-        # 获取座位 ID（从房间缓存查找）
-        seat_ids = []
-        if state.room_cache and state.room_cache.is_ready:
-            seats = state.room_cache.get_seats(ROOM_NAME, "")
-            if not seats:
-                # 尝试所有楼层
-                for floor in state.room_cache.get_floor_names(ROOM_NAME):
-                    seats = state.room_cache.get_seats(ROOM_NAME, floor)
-                    if seats:
-                        break
+        # 搜索指定时间的座位
+        data = {
+            "beginTime": int(target_time.timestamp()),
+            "duration": DURATION_HOURS * 3600,
+            "num": 1,
+            "space_category[category_id]": category_id,
+            "space_category[content_id]": content_id,
+        }
+        resp = api_client.session.post(
+            url=api_client.base_url + "/Seat/Index/searchSeats",
+            data=data,
+            timeout=30,
+        ).json()
 
-            for seat_num in SEAT_IDS:
-                found = False
-                for s in seats:
-                    s_num = str(s.get("title", "") or s.get("seatNum", "") or s.get("id", ""))
-                    s_id = str(s.get("id", "") or s.get("seatId", "") or s.get("seat_id", ""))
-                    if s_num == seat_num or s_id == seat_num:
-                        seat_ids.append(s_id)
-                        found = True
-                        break
-                if not found:
-                    seat_ids.append(seat_num)  # fallback: 直接用座位号
+        # 从搜索结果中找到目标楼层的座位
+        seat_map = {}
+        for child in resp.get("allContent", {}).get("children", []):
+            if isinstance(child, dict) and "children" in child:
+                for floor in child.get("children", {}).get("children", []):
+                    if isinstance(floor, dict) and floor.get("roomName") == FLOOR_NAME:
+                        pois = floor.get("seatMap", {}).get("POIs", [])
+                        for poi in pois:
+                            title = poi.get("title", "")
+                            seat_id = str(poi.get("id", ""))
+                            if title in TARGET_SEATS:
+                                seat_map[title] = seat_id
+                                logger.info("找到座位 %s -> ID %s", title, seat_id)
 
-        if not seat_ids:
-            seat_ids = SEAT_IDS
-
-        # 使用固定的 UID
-        # 99号=同伴(uid=305033), 100号=用户(uid=303687)
-        booker_uids = [COMPANION_CONFIG["uid"], USER_CONFIG["uid"]]
-
-        logger.info("预约参数: 日期=%s, 座位=%s, UIDs=%s", target_date, seat_ids, booker_uids)
-
-        # 执行预约
-        result = state.api_client.book_seat(
-            begin_time=begin_dt,
-            duration_hours=DURATION_HOURS,
-            seat_ids=seat_ids,
-            booker_uids=booker_uids,
-        )
-
-        _last_book_result = f"预约成功: {target_date} {ROOM_NAME} 座位 {', '.join(SEAT_IDS)}"
-        logger.info(_last_book_result)
-        return {"success": True, "message": _last_book_result}
-
+        return seat_map
     except Exception as e:
-        _last_book_result = f"预约失败: {str(e)}"
-        logger.error(_last_book_result)
-        return {"success": False, "message": _last_book_result}
+        logger.error("搜索座位失败: %s", e)
+        return {}
 
 
-def _do_checkin_for_user(state, student_id: str, password: str, user_name: str) -> tuple[int, int]:
-    """为单个用户签到。返回 (成功数, 总数)。"""
+def _check_already_booked(api_client, target_date: datetime.date) -> Dict[str, bool]:
+    """检查指定日期是否已有预约，返回 {座位号: 是否已预约}。"""
+    result = {s: False for s in TARGET_SEATS}
     try:
-        # 临时登录该用户
-        state.config.update_user_info(login_name=student_id, password=password)
-        state.session_mgr.init_session()
-        success, _ = state.session_mgr.login()
-        if not success:
-            logger.warning("%s 登录失败，无法签到", user_name)
-            return 0, 0
-
-        # 获取预约列表
-        bookings = state.api_client.get_my_bookings()
-        if not bookings:
-            logger.info("%s 没有找到预约", user_name)
-            return 0, 0
-
-        # 签到所有预约
-        success_count = 0
+        bookings = api_client.get_my_bookings()
         for b in bookings:
-            booking_id = b.get("booking_id") or b.get("bookingId") or b.get("id")
-            if booking_id:
-                try:
-                    ok, msg, _ = state.api_client.check_in(booking_id)
-                    if ok:
-                        success_count += 1
-                        logger.info("%s 签到成功: %s", user_name, booking_id)
-                    else:
-                        logger.warning("%s 签到失败 %s: %s", user_name, booking_id, msg)
-                except Exception as e:
-                    logger.warning("%s 签到异常 %s: %s", user_name, booking_id, e)
-
-        return success_count, len(bookings)
+            if b.get("beginTime") and b["beginTime"].date() == target_date:
+                seat_num = b.get("seatNum", "")
+                if seat_num in TARGET_SEATS:
+                    status = b.get("status", "")
+                    # 状态 0=待签到, 1=已签到, 5=预约中 都算已预约
+                    if status in ("0", "1", "5", "6", "7"):
+                        result[seat_num] = True
+                        logger.info("座位 %s 在 %s 已有预约 (状态: %s)", seat_num, target_date, status)
     except Exception as e:
-        logger.error("%s 签到异常: %s", user_name, e)
-        return 0, 0
+        logger.warning("检查已有预约失败: %s", e)
+    return result
 
 
-def _do_checkin(state) -> Dict[str, Any]:
-    """执行签到：为用户和同伴签到。"""
-    global _last_checkin_result
+def _do_book_single(api_client, seat_id: str, seat_num: str,
+                     booker_uid: str, target_time: datetime) -> Dict:
+    """预约单个座位。"""
+    logger.info("预约座位 %s (ID: %s) -> %s", seat_num, seat_id, target_time)
     try:
+        resp = api_client.book_seat(
+            begin_time=target_time,
+            duration_hours=DURATION_HOURS,
+            seat_ids=[seat_id],
+            booker_uids=[booker_uid],
+        )
+        code = resp.get("CODE", "")
+        if code == "ok":
+            logger.info("座位 %s 预约成功", seat_num)
+        else:
+            msg = resp.get("MESSAGE", resp.get("msg", str(resp)))
+            logger.warning("座位 %s 预约失败: %s", seat_num, msg)
+        return resp
+    except Exception as e:
+        logger.error("预约座位 %s 异常: %s", seat_num, e)
+        return {"CODE": "error", "MESSAGE": str(e)}
+
+
+def _do_book(state) -> None:
+    """预约逻辑：预约今天/明天/后天的座位。"""
+    try:
+        api = state.api_client
+        now = datetime.now()
         results = []
 
-        # 签到用户
-        ok, total = _do_checkin_for_user(state, USER_CONFIG["student_id"], USER_CONFIG["password"], USER_CONFIG["name"])
-        results.append(f"{USER_CONFIG['name']}: {ok}/{total}")
+        # 确定要预约哪些天
+        dates_to_book = []
+        for delta in [0, 1, 2]:  # 今天、明天、后天
+            target_date = (now + timedelta(days=delta)).date()
+            target_time = datetime.combine(target_date, datetime.min.time().replace(
+                hour=BEGIN_HOUR, minute=0
+            ))
 
-        # 签到同伴
-        ok, total = _do_checkin_for_user(state, COMPANION_CONFIG["student_id"], COMPANION_CONFIG["password"], COMPANION_CONFIG["name"])
-        results.append(f"{COMPANION_CONFIG['name']}: {ok}/{total}")
+            if delta == 2:
+                # 后天：需要在今天 20:00 后才能预约
+                book_available_at = datetime.combine(
+                    now.date(), datetime.min.time().replace(
+                        hour=AUTO_BOOK_HOUR, minute=AUTO_BOOK_MINUTE
+                    )
+                )
+                if now < book_available_at:
+                    logger.info("后天座位需在 %s 后才能预约，跳过", book_available_at)
+                    continue
 
-        # 恢复用户登录
-        state.config.update_user_info(login_name=USER_CONFIG["student_id"], password=USER_CONFIG["password"])
-        state.session_mgr.init_session()
-        state.session_mgr.login()
+            dates_to_book.append((target_date, target_time))
 
-        _last_checkin_result = f"签到完成 - {' | '.join(results)}"
-        logger.info(_last_checkin_result)
-        return {"success": True, "message": _last_checkin_result}
+        for target_date, target_time in dates_to_book:
+            logger.info("检查 %s 的预约...", target_date)
 
+            # 检查是否已预约
+            already_booked = _check_already_booked(api, target_date)
+            if all(already_booked.values()):
+                logger.info("%s 所有座位已预约，跳过", target_date)
+                results.append(f"{target_date}: 已预约")
+                continue
+
+            # 搜索可用座位（获取真实 seat_id）
+            seat_map = _search_seats_for_time(api, target_time)
+            if not seat_map:
+                logger.warning("%s 未找到可用座位", target_date)
+                results.append(f"{target_date}: 未找到座位")
+                continue
+
+            # 逐个预约座位（独立预约，互不影响）
+            for seat_num in TARGET_SEATS:
+                if already_booked.get(seat_num):
+                    logger.info("座位 %s 在 %s 已预约，跳过", seat_num, target_date)
+                    continue
+
+                seat_id = seat_map.get(seat_num)
+                if not seat_id:
+                    logger.warning("座位 %s 未在搜索结果中找到", seat_num)
+                    results.append(f"{target_date} 座位{seat_num}: 未找到")
+                    continue
+
+                # 确定预约人 UID
+                booker_uid = COMPANION_UID if seat_num == "99" else USER_UID
+
+                resp = _do_book_single(api, seat_id, seat_num, booker_uid, target_time)
+                code = resp.get("CODE", "")
+                msg = resp.get("MESSAGE", resp.get("msg", ""))
+                if code == "ok":
+                    results.append(f"{target_date} 座位{seat_num}: ✅ 成功")
+                else:
+                    results.append(f"{target_date} 座位{seat_num}: ❌ {msg}")
+
+        _auto_state["last_book_result"] = "; ".join(results) if results else "无需预约"
+        _auto_state["last_error"] = ""
+        logger.info("预约完成: %s", _auto_state["last_book_result"])
     except Exception as e:
-        _last_checkin_result = f"签到失败: {str(e)}"
-        logger.error(_last_checkin_result)
-        return {"success": False, "message": _last_checkin_result}
+        _auto_state["last_error"] = str(e)
+        _auto_state["last_book_result"] = f"预约异常: {e}"
+        logger.error("预约异常: %s", e)
 
 
-def _scheduler_loop():
-    """调度主循环。"""
-    global _scheduler_running
-    logger.info("自动调度已启动")
+# ─── 签到逻辑 ─────────────────────────────────────────────────────────────────────
+def _do_checkin_for_user(student_id: str, password: str, user_name: str,
+                          state) -> List[str]:
+    """登录指定用户并签到其预约。"""
+    results = []
+    try:
+        from seathunter.auth.session_manager import SessionManager
+        from seathunter.api.client import ApiClient as LibApiClient
 
-    while not _stop_event.is_set():
-        now = datetime.now()
+        # 创建临时会话
+        temp_session_mgr = SessionManager()
+        temp_session_mgr.set_credentials(student_id, password)
+        login_ok = temp_session_mgr.login()
+        if not login_ok:
+            results.append(f"{user_name}: ❌ 登录失败")
+            return results
 
-        # 检查是否到了预约时间（每晚20:00）
-        if now.hour == BOOK_HOUR and now.minute == 0:
-            logger.info("触发自动预约")
-            # 需要获取 state，但这里无法直接访问 request
-            # 通过全局变量存储 state
-            if _auto_state:
-                _do_book(_auto_state)
-            _stop_event.wait(65)  # 等待 65 分钟避免重复触发
+        temp_api = LibApiClient(temp_session_mgr)
+        bookings = temp_api.get_my_bookings()
 
-        # 检查是否到了签到时间（每天9:30）
-        elif now.hour == CHECKIN_HOUR and now.minute == CHECKIN_MINUTE:
-            logger.info("触发自动签到")
-            if _auto_state:
-                _do_checkin(_auto_state)
-            _stop_event.wait(65)
+        today = datetime.now().date()
+        checked_count = 0
+        for b in bookings:
+            if not b.get("beginTime"):
+                continue
+            if b["beginTime"].date() != today:
+                continue
+            if b.get("status") != "0":
+                continue
 
-        else:
-            _stop_event.wait(30)  # 30秒检查一次
+            booking_id = b.get("bookingId", "")
+            seat_num = b.get("seatNum", "")
+            success, msg, _ = temp_api.check_in(booking_id)
+            if success:
+                results.append(f"{user_name} 座位{seat_num}: ✅ 签到成功")
+                checked_count += 1
+            else:
+                results.append(f"{user_name} 座位{seat_num}: ❌ {msg}")
 
-    _scheduler_running = False
-    logger.info("自动调度已停止")
+        if checked_count == 0:
+            results.append(f"{user_name}: 无需签到的预约")
+
+        temp_session_mgr.logout()
+    except Exception as e:
+        results.append(f"{user_name}: ❌ 异常 {e}")
+        logger.error("签到异常 (%s): %s", user_name, e)
+
+    return results
 
 
-# 全局 state 引用（用于调度线程）
-_auto_state = None
+def _do_checkin(state) -> None:
+    """签到逻辑：签到你和同伴的预约。"""
+    all_results = []
+
+    # 签到你的预约
+    your_results = _do_checkin_for_user(
+        USER_STUDENT_ID, USER_PASSWORD, "我", state
+    )
+    all_results.extend(your_results)
+
+    # 签到同伴的预约
+    companion_results = _do_checkin_for_user(
+        COMPANION_STUDENT_ID, COMPANION_PASSWORD, "同伴", state
+    )
+    all_results.extend(companion_results)
+
+    _auto_state["last_checkin_result"] = "; ".join(all_results)
+    _auto_state["last_error"] = ""
+    logger.info("签到完成: %s", _auto_state["last_checkin_result"])
 
 
+# ─── 调度器 ───────────────────────────────────────────────────────────────────────
+def _scheduler_loop(state) -> None:
+    """后台调度器：检查是否到触发时间。"""
+    logger.info("调度器已启动")
+    last_book_date: Optional[str] = None
+    last_checkin_date: Optional[str] = None
+
+    while _auto_state["running"]:
+        try:
+            now = datetime.now()
+            today_str = now.strftime("%Y-%m-%d")
+
+            # 检查预约时间：每天 20:00
+            if (now.hour == AUTO_BOOK_HOUR
+                    and now.minute == AUTO_BOOK_MINUTE
+                    and last_book_date != today_str):
+                logger.info("触发自动预约")
+                last_book_date = today_str
+                threading.Thread(
+                    target=_do_book, args=(state,), daemon=True
+                ).start()
+
+            # 检查签到时间：每天 9:30
+            if (now.hour == AUTO_CHECKIN_HOUR
+                    and now.minute == AUTO_CHECKIN_MINUTE
+                    and last_checkin_date != today_str):
+                logger.info("触发自动签到")
+                last_checkin_date = today_str
+                threading.Thread(
+                    target=_do_checkin, args=(state,), daemon=True
+                ).start()
+
+        except Exception as e:
+            logger.error("调度器异常: %s", e)
+
+        # 每 30 秒检查一次
+        for _ in range(30):
+            if not _auto_state["running"]:
+                break
+            import time
+            time.sleep(1)
+
+    logger.info("调度器已停止")
+
+
+# ─── API 路由 ─────────────────────────────────────────────────────────────────────
 @router.get("/status")
 def get_status(request: Request):
-    """获取自动任务状态。"""
+    """获取当前状态。"""
     state = _get_state(request)
-    logged_in = bool(state.session_mgr and state.session_mgr.uid)
-
-    next_book = _get_next_trigger(BOOK_HOUR)
-    next_checkin = _get_next_trigger(CHECKIN_HOUR, CHECKIN_MINUTE)
-
     return {
-        "logged_in": logged_in,
-        "user_name": state.session_mgr.name if state.session_mgr else "",
-        "auto_book_running": _scheduler_running,
-        "auto_checkin_running": _scheduler_running,
-        "next_book_time": next_book.strftime("%m-%d %H:%M"),
-        "next_checkin_time": next_checkin.strftime("%m-%d %H:%M"),
-        "last_book_result": _last_book_result,
-        "last_checkin_result": _last_checkin_result,
+        "logged_in": state.api_client is not None,
+        "running": _auto_state["running"],
+        "student_id": _auto_state["student_id"],
+        "last_book_result": _auto_state["last_book_result"],
+        "last_checkin_result": _auto_state["last_checkin_result"],
+        "last_error": _auto_state["last_error"],
+        "target_seats": TARGET_SEATS,
+        "room_name": ROOM_NAME,
+        "schedule": {
+            "book": f"每天 {AUTO_BOOK_HOUR}:{AUTO_BOOK_MINUTE:02d}",
+            "checkin": f"每天 {AUTO_CHECKIN_HOUR}:{AUTO_CHECKIN_MINUTE:02d}",
+        },
     }
-
-
-def _get_bookings_for_user(state, student_id: str, password: str, user_name: str) -> List[Dict]:
-    """获取单个用户的预约列表。"""
-    try:
-        # 临时登录该用户
-        state.config.update_user_info(login_name=student_id, password=password)
-        state.session_mgr.init_session()
-        success, _ = state.session_mgr.login()
-        if not success:
-            return []
-
-        bookings = state.api_client.get_my_bookings()
-        result = []
-        for b in bookings:
-            raw_status = str(b.get("status", ""))
-            begin = b.get("begin_time") or b.get("beginTime")
-            end = b.get("end_time") or b.get("endTime")
-            # 格式化时间
-            begin_str = begin.strftime("%H:%M") if hasattr(begin, "strftime") else str(begin or "")
-            end_str = end.strftime("%H:%M") if hasattr(end, "strftime") else str(end or "")
-            result.append({
-                "booking_id": b.get("booking_id") or b.get("bookingId") or b.get("id"),
-                "room_name": b.get("room_name") or b.get("roomName") or ROOM_NAME,
-                "seat_num": b.get("seat_num") or b.get("seatNum") or "",
-                "time_range": f"{begin_str} ~ {end_str}",
-                "status": _translate_status(raw_status),
-                "user_name": user_name,
-            })
-        return result
-    except Exception as e:
-        logger.error("获取 %s 预约失败: %s", user_name, e)
-        return []
 
 
 @router.get("/bookings")
 def get_bookings(request: Request):
-    """获取用户和同伴的预约列表。"""
+    """获取你和同伴的预约列表。"""
     state = _get_state(request)
     if state.api_client is None:
-        return {"bookings": []}
+        raise HTTPException(status_code=401, detail="尚未登录")
 
-    all_bookings = []
+    all_bookings: List[Dict[str, Any]] = []
 
-    # 获取用户预约
-    user_bookings = _get_bookings_for_user(state, USER_CONFIG["student_id"], USER_CONFIG["password"], USER_CONFIG["name"])
-    all_bookings.extend(user_bookings)
+    # 获取你的预约
+    try:
+        your_bookings = state.api_client.get_my_bookings()
+        for b in your_bookings:
+            all_bookings.append({
+                "user": "我",
+                "roomName": b.get("roomName", ""),
+                "seatNum": b.get("seatNum", ""),
+                "beginTime": b["beginTime"].strftime("%m-%d %H:%M") if b.get("beginTime") else "",
+                "endTime": b["endTime"].strftime("%H:%M") if b.get("endTime") else "",
+                "status": STATUS_MAP.get(b.get("status", ""), b.get("status", "")),
+                "bookingId": b.get("bookingId", ""),
+            })
+    except Exception as e:
+        logger.warning("获取你的预约失败: %s", e)
 
-    # 获取同伴预约
-    companion_bookings = _get_bookings_for_user(state, COMPANION_CONFIG["student_id"], COMPANION_CONFIG["password"], COMPANION_CONFIG["name"])
-    all_bookings.extend(companion_bookings)
+    # 获取同伴的预约
+    try:
+        from seathunter.auth.session_manager import SessionManager
+        from seathunter.api.client import ApiClient as LibApiClient
 
-    # 恢复用户登录
-    state.config.update_user_info(login_name=USER_CONFIG["student_id"], password=USER_CONFIG["password"])
-    state.session_mgr.init_session()
-    state.session_mgr.login()
+        temp_mgr = SessionManager()
+        temp_mgr.set_credentials(COMPANION_STUDENT_ID, COMPANION_PASSWORD)
+        if temp_mgr.login():
+            temp_api = LibApiClient(temp_mgr)
+            companion_bookings = temp_api.get_my_bookings()
+            for b in companion_bookings:
+                all_bookings.append({
+                    "user": "同伴",
+                    "roomName": b.get("roomName", ""),
+                    "seatNum": b.get("seatNum", ""),
+                    "beginTime": b["beginTime"].strftime("%m-%d %H:%M") if b.get("beginTime") else "",
+                    "endTime": b["endTime"].strftime("%H:%M") if b.get("endTime") else "",
+                    "status": STATUS_MAP.get(b.get("status", ""), b.get("status", "")),
+                    "bookingId": b.get("bookingId", ""),
+                })
+            temp_mgr.logout()
+    except Exception as e:
+        logger.warning("获取同伴预约失败: %s", e)
 
     return {"bookings": all_bookings}
 
 
-@router.post("/book", response_model=MessageResponse)
+@router.post("/book")
 def manual_book(request: Request):
-    """手动触发预约。"""
-    global _auto_state
+    """手动触发预约（立即执行）。"""
     state = _get_state(request)
-    _auto_state = state
-    result = _do_book(state)
-    return MessageResponse(success=result["success"], message=result["message"])
+    if state.api_client is None:
+        raise HTTPException(status_code=401, detail="尚未登录")
+
+    threading.Thread(target=_do_book, args=(state,), daemon=True).start()
+    return {"ok": True, "message": "正在预约，请稍后刷新查看结果"}
 
 
-@router.post("/checkin", response_model=MessageResponse)
+@router.post("/checkin")
 def manual_checkin(request: Request):
-    """手动触发签到。"""
-    global _auto_state
+    """手动触发签到（立即执行）。"""
     state = _get_state(request)
-    _auto_state = state
-    result = _do_checkin(state)
-    return MessageResponse(success=result["success"], message=result["message"])
+    if state.api_client is None:
+        raise HTTPException(status_code=401, detail="尚未登录")
+
+    threading.Thread(target=_do_checkin, args=(state,), daemon=True).start()
+    return {"ok": True, "message": "正在签到，请稍后刷新查看结果"}
 
 
-@router.post("/start", response_model=MessageResponse)
+@router.post("/start")
 def start_scheduler(request: Request):
-    """启动自动调度。"""
-    global _scheduler_running, _scheduler_thread, _auto_state
+    """启动自动调度器。"""
+    if _auto_state["running"]:
+        return {"ok": True, "message": "调度器已在运行"}
+
+    _auto_state["running"] = True
     state = _get_state(request)
-    _auto_state = state
-
-    if _scheduler_running:
-        return MessageResponse(success=True, message="调度已在运行")
-
-    _stop_event.clear()
-    _scheduler_running = True
-    _scheduler_thread = threading.Thread(target=_scheduler_loop, daemon=True, name="AutoScheduler")
-    _scheduler_thread.start()
-
-    return MessageResponse(success=True, message="自动调度已启动")
+    threading.Thread(
+        target=_scheduler_loop, args=(state,), daemon=True, name="AutoScheduler"
+    ).start()
+    return {"ok": True, "message": "调度器已启动"}
 
 
-@router.post("/stop", response_model=MessageResponse)
+@router.post("/stop")
 def stop_scheduler():
-    """停止自动调度。"""
-    global _scheduler_running
-    _stop_event.set()
-    _scheduler_running = False
-    return MessageResponse(success=True, message="自动调度已停止")
+    """停止自动调度器。"""
+    _auto_state["running"] = False
+    return {"ok": True, "message": "调度器已停止"}

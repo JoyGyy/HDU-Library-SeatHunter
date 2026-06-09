@@ -2,63 +2,69 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>HDU 图书馆抢座</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>座位预约</title>
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-  <div id="app">
-    <div class="header">
-      <h1>📚 HDU 图书馆抢座</h1>
-      <p class="subtitle">自动预约 + 自动签到</p>
+  <div class="app">
+    <!-- 状态 -->
+    <div class="card">
+      <h2>状态</h2>
+      <div class="status-grid">
+        <div class="status-item">
+          <span class="status-label">登录</span>
+          <span id="loginStatus" class="badge badge-off">检查中…</span>
+        </div>
+        <div class="status-item">
+          <span class="status-label">调度器</span>
+          <span id="schedulerStatus" class="badge badge-off">检查中…</span>
+        </div>
+        <div class="status-item">
+          <span class="status-label">目标座位</span>
+          <span id="targetSeats" class="result-value">-</span>
+        </div>
+      </div>
     </div>
 
-    <div class="content">
-      <!-- 状态卡片 -->
-      <div class="card">
-        <div class="card-title">📌 当前状态</div>
-        <div class="card-info">
-          <div class="status-row">
-            <span>登录状态</span>
-            <span id="login-status" class="status-badge">检查中...</span>
-          </div>
-          <div class="status-row">
-            <span>自动预约</span>
-            <span id="book-status" class="status-badge">检查中...</span>
-          </div>
-          <div class="status-row">
-            <span>自动签到</span>
-            <span id="checkin-status" class="status-badge">检查中...</span>
-          </div>
-        </div>
+    <!-- 预约结果 -->
+    <div class="card">
+      <h2>执行结果</h2>
+      <div class="result-row">
+        <span class="result-label">预约</span>
+        <span id="bookResult" class="result-value">-</span>
       </div>
+      <div class="result-row">
+        <span class="result-label">签到</span>
+        <span id="checkinResult" class="result-value">-</span>
+      </div>
+      <div class="result-row">
+        <span class="result-label">错误</span>
+        <span id="errorInfo" class="result-value">无</span>
+      </div>
+    </div>
 
-      <!-- 今日预约 -->
-      <div class="card">
-        <div class="card-title">📋 今日预约</div>
-        <div id="bookings-list" class="card-info">
-          <div class="loading">加载中...</div>
-        </div>
-      </div>
+    <!-- 预约列表 -->
+    <div class="card">
+      <h2>预约列表</h2>
+      <div id="bookingList"><div class="empty">加载中…</div></div>
+    </div>
 
-      <!-- 操作按钮 -->
-      <div class="actions">
-        <button class="btn primary" onclick="manualBook()">立即预约</button>
-        <button class="btn" onclick="manualCheckin()">立即签到</button>
-        <button class="btn" onclick="refreshStatus()">刷新状态</button>
-      </div>
+    <!-- 操作 -->
+    <div class="card action-card">
+      <button class="btn btn-primary" onclick="manualBook()">立即预约</button>
+      <button class="btn btn-success" onclick="manualCheckin()">立即签到</button>
+      <button class="btn btn-warn" onclick="toggleScheduler()" id="toggleBtn">启动/停止</button>
+      <button class="btn btn-info" onclick="manualRefresh()">刷新</button>
+    </div>
 
-      <!-- 日志 -->
-      <div class="card">
-        <div class="card-title">📝 运行日志</div>
-        <div id="log-list" class="log-container">
-          <div class="loading">暂无日志</div>
-        </div>
-      </div>
+    <!-- 日志 -->
+    <div class="card">
+      <h2>运行日志</h2>
+      <div id="log" class="log-container"></div>
     </div>
   </div>
 
-  <div id="toast" class="toast hidden"></div>
   <script src="/static/app.js"></script>
 </body>
 </html>
