@@ -51,11 +51,14 @@ def root():
 
 
 # 注册路由
-from server.api import auth, checkin, friends  # noqa: E402
+from server.api import auth, bookings, checkin, friends, plans, schedules  # noqa: E402
 
 app.include_router(auth.router, prefix="/api/auth", tags=["认证"])
+app.include_router(bookings.router, prefix="/api/bookings", tags=["预约"])
 app.include_router(checkin.router, prefix="/api/checkin", tags=["签到"])
 app.include_router(friends.router, prefix="/api/friends", tags=["好友"])
+app.include_router(plans.router, prefix="/api/plans", tags=["方案"])
+app.include_router(schedules.router, prefix="/api/schedules", tags=["调度"])
 
 
 if __name__ == "__main__":
