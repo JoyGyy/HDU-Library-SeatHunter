@@ -19,11 +19,15 @@ router = APIRouter()
 USER_CONFIG = {
     "student_id": "23051110",
     "password": "@Krz201314",
+    "uid": "303687",
+    "name": "joygy",
 }
 
 COMPANION_CONFIG = {
     "student_id": "23140322",
     "password": "Pangzidan0713#",
+    "uid": "305033",
+    "name": "同伴",
 }
 
 ROOM_NAME = "自习室二楼西"
@@ -117,21 +121,11 @@ def _do_book(state) -> Dict[str, Any]:
         if not seat_ids:
             seat_ids = SEAT_IDS
 
-        # 获取 booker_uids
-        user_uid = state.session_mgr.uid or ""
-        companion_uid = ""
+        # 使用固定的 UID
+        # 99号=同伴(uid=305033), 100号=用户(uid=303687)
+        booker_uids = [COMPANION_CONFIG["uid"], USER_CONFIG["uid"]]
 
-        # 尝试获取同伴 UID（从好友列表）
-        try:
-            friends = state.friend_store.get_all()
-            for f in friends:
-                if f.get("student_id") == COMPANION_CONFIG["student_id"]:
-                    companion_uid = f.get("uid", "")
-                    break
-        except:
-            pass
-
-        booker_uids = [companion_uid, user_uid]  # 99号=同伴, 100号=用户
+        logger.info("预约参数: 日期=%s, 座位=%s, UIDs=%s", target_date, seat_ids, booker_uids)
 
         # 执行预约
         result = state.api_client.book_seat(
@@ -151,20 +145,22 @@ def _do_book(state) -> Dict[str, Any]:
         return {"success": False, "message": _last_book_result}
 
 
-def _do_checkin(state) -> Dict[str, Any]:
-    """执行签到：签到今天的预约。"""
-    global _last_checkin_result
+def _do_checkin_for_user(state, student_id: str, password: str, user_name: str) -> tuple[int, int]:
+    """为单个用户签到。返回 (成功数, 总数)。"""
     try:
-        if state.api_client is None:
-            _last_checkin_result = "未登录，无法签到"
-            return {"success": False, "message": _last_checkin_result}
+        # 临时登录该用户
+        state.config.update_user_info(login_name=student_id, password=password)
+        state.session_mgr.init_session()
+        success, _ = state.session_mgr.login()
+        if not success:
+            logger.warning("%s 登录失败，无法签到", user_name)
+            return 0, 0
 
-        # 获取今天的预约列表
+        # 获取预约列表
         bookings = state.api_client.get_my_bookings()
-
         if not bookings:
-            _last_checkin_result = "没有找到今天的预约"
-            return {"success": False, "message": _last_checkin_result}
+            logger.info("%s 没有找到预约", user_name)
+            return 0, 0
 
         # 签到所有预约
         success_count = 0
@@ -175,13 +171,38 @@ def _do_checkin(state) -> Dict[str, Any]:
                     ok, msg, _ = state.api_client.check_in(booking_id)
                     if ok:
                         success_count += 1
-                        logger.info("签到成功: %s", booking_id)
+                        logger.info("%s 签到成功: %s", user_name, booking_id)
                     else:
-                        logger.warning("签到失败 %s: %s", booking_id, msg)
+                        logger.warning("%s 签到失败 %s: %s", user_name, booking_id, msg)
                 except Exception as e:
-                    logger.warning("签到异常 %s: %s", booking_id, e)
+                    logger.warning("%s 签到异常 %s: %s", user_name, booking_id, e)
 
-        _last_checkin_result = f"签到完成: {success_count}/{len(bookings)} 成功"
+        return success_count, len(bookings)
+    except Exception as e:
+        logger.error("%s 签到异常: %s", user_name, e)
+        return 0, 0
+
+
+def _do_checkin(state) -> Dict[str, Any]:
+    """执行签到：为用户和同伴签到。"""
+    global _last_checkin_result
+    try:
+        results = []
+
+        # 签到用户
+        ok, total = _do_checkin_for_user(state, USER_CONFIG["student_id"], USER_CONFIG["password"], USER_CONFIG["name"])
+        results.append(f"{USER_CONFIG['name']}: {ok}/{total}")
+
+        # 签到同伴
+        ok, total = _do_checkin_for_user(state, COMPANION_CONFIG["student_id"], COMPANION_CONFIG["password"], COMPANION_CONFIG["name"])
+        results.append(f"{COMPANION_CONFIG['name']}: {ok}/{total}")
+
+        # 恢复用户登录
+        state.config.update_user_info(login_name=USER_CONFIG["student_id"], password=USER_CONFIG["password"])
+        state.session_mgr.init_session()
+        state.session_mgr.login()
+
+        _last_checkin_result = f"签到完成 - {' | '.join(results)}"
         logger.info(_last_checkin_result)
         return {"success": True, "message": _last_checkin_result}
 
@@ -247,30 +268,62 @@ def get_status(request: Request):
     }
 
 
-@router.get("/bookings")
-def get_bookings(request: Request):
-    """获取当前预约列表。"""
-    state = _get_state(request)
-    if state.api_client is None:
-        return {"bookings": []}
-
+def _get_bookings_for_user(state, student_id: str, password: str, user_name: str) -> List[Dict]:
+    """获取单个用户的预约列表。"""
     try:
+        # 临时登录该用户
+        state.config.update_user_info(login_name=student_id, password=password)
+        state.session_mgr.init_session()
+        success, _ = state.session_mgr.login()
+        if not success:
+            return []
+
         bookings = state.api_client.get_my_bookings()
         result = []
         for b in bookings:
             raw_status = str(b.get("status", ""))
+            begin = b.get("begin_time") or b.get("beginTime")
+            end = b.get("end_time") or b.get("endTime")
+            # 格式化时间
+            begin_str = begin.strftime("%H:%M") if hasattr(begin, "strftime") else str(begin or "")
+            end_str = end.strftime("%H:%M") if hasattr(end, "strftime") else str(end or "")
             result.append({
                 "booking_id": b.get("booking_id") or b.get("bookingId") or b.get("id"),
                 "room_name": b.get("room_name") or b.get("roomName") or ROOM_NAME,
                 "seat_num": b.get("seat_num") or b.get("seatNum") or "",
-                "time_range": f"{b.get('begin_time') or b.get('beginTime') or ''} ~ {b.get('end_time') or b.get('endTime') or ''}",
+                "time_range": f"{begin_str} ~ {end_str}",
                 "status": _translate_status(raw_status),
-                "user_name": state.session_mgr.name or "",
+                "user_name": user_name,
             })
-        return {"bookings": result}
+        return result
     except Exception as e:
-        logger.error("获取预约失败: %s", e)
-        return {"bookings": [], "error": str(e)}
+        logger.error("获取 %s 预约失败: %s", user_name, e)
+        return []
+
+
+@router.get("/bookings")
+def get_bookings(request: Request):
+    """获取用户和同伴的预约列表。"""
+    state = _get_state(request)
+    if state.api_client is None:
+        return {"bookings": []}
+
+    all_bookings = []
+
+    # 获取用户预约
+    user_bookings = _get_bookings_for_user(state, USER_CONFIG["student_id"], USER_CONFIG["password"], USER_CONFIG["name"])
+    all_bookings.extend(user_bookings)
+
+    # 获取同伴预约
+    companion_bookings = _get_bookings_for_user(state, COMPANION_CONFIG["student_id"], COMPANION_CONFIG["password"], COMPANION_CONFIG["name"])
+    all_bookings.extend(companion_bookings)
+
+    # 恢复用户登录
+    state.config.update_user_info(login_name=USER_CONFIG["student_id"], password=USER_CONFIG["password"])
+    state.session_mgr.init_session()
+    state.session_mgr.login()
+
+    return {"bookings": all_bookings}
 
 
 @router.post("/book", response_model=MessageResponse)
