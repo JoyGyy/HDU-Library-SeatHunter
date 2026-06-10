@@ -22,6 +22,8 @@ logging.basicConfig(
     format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
 )
 
+logger = logging.getLogger("seathunter.server")
+
 from server.models.state import AppState  # noqa: E402
 
 app = FastAPI(title="HDU Library SeatHunter API", version="1.0.0")
@@ -51,11 +53,10 @@ def on_startup() -> None:
         import time
         time.sleep(2)  # 等待服务器完全启动
         try:
-            from server.api.auto import (
-                USER_STUDENT_ID, USER_PASSWORD,
-                _auto_state, _scheduler_loop,
-            )
-            import server.api.auto as auto_module
+            from server.core.config import USER_STUDENT_ID, USER_PASSWORD
+            from server.core.scheduler import init_scheduler, get_debug_log
+
+            debug = get_debug_log()
 
             # 自动登录
             state.config.update_user_info(
@@ -67,20 +68,13 @@ def on_startup() -> None:
             if success:
                 state.init_after_login()
                 logger.info("自动登录成功: %s", state.session_mgr.name)
-                auto_module._auto_state["logged_in"] = True
-                auto_module._auto_state["student_id"] = USER_STUDENT_ID
 
                 # 启动调度器
-                if not auto_module._auto_state["running"]:
-                    auto_module._auto_state["running"] = True
-                    threading.Thread(
-                        target=_scheduler_loop, args=(state,),
-                        daemon=True, name="AutoScheduler"
-                    ).start()
-                    logger.info("自动调度已启动")
+                scheduler = init_scheduler(state)
+                scheduler.start()
             else:
                 logger.error("自动登录失败: %s", err_type)
-                auto_module._auto_state["last_error"] = f"登录失败: {err_type}"
+                debug.log(f"自动登录失败: {err_type}")
         except Exception as e:
             logger.error("自动初始化失败: %s", e)
 
@@ -89,8 +83,10 @@ def on_startup() -> None:
 
 @app.on_event("shutdown")
 def on_shutdown() -> None:
-    import server.api.auto as auto_module
-    auto_module._auto_state["running"] = False
+    from server.core.scheduler import get_scheduler
+    scheduler = get_scheduler()
+    if scheduler:
+        scheduler.stop()
     state.shutdown()
 
 
@@ -105,17 +101,10 @@ def root():
     return FileResponse(os.path.join(static_dir, "index.html"))
 
 
-# 注册路由
-from server.api import auth, auto, bookings, checkin, friends, plans, rooms, schedules  # noqa: E402
+# 注册路由（只保留 auto，其他路由可按需保留或删除）
+from server.api import auto  # noqa: E402
 
-app.include_router(auth.router, prefix="/api/auth", tags=["认证"])
 app.include_router(auto.router, prefix="/api/auto", tags=["自动"])
-app.include_router(bookings.router, prefix="/api/bookings", tags=["预约"])
-app.include_router(checkin.router, prefix="/api/checkin", tags=["签到"])
-app.include_router(friends.router, prefix="/api/friends", tags=["好友"])
-app.include_router(plans.router, prefix="/api/plans", tags=["方案"])
-app.include_router(rooms.router, prefix="/api/rooms", tags=["房间"])
-app.include_router(schedules.router, prefix="/api/schedules", tags=["调度"])
 
 
 if __name__ == "__main__":
