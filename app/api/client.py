@@ -110,14 +110,15 @@ class ApiClient:
         try:
             resp = self.session.post(
                 url=url,
-                data={"id": booking_id, "LAB_JSON": "1"},
+                data={"bookingId": booking_id, "LAB_JSON": "1"},
                 timeout=15,
             )
             data = resp.json()
-            code = data.get("CODE", "")
-            if code == "ok":
+            inner = data.get("DATA", {})
+            result = inner.get("result", "")
+            if result == "ok":
                 return True, "", booking_id
-            msg = data.get("MESSAGE", data.get("msg", "未知错误"))
+            msg = inner.get("msg", data.get("MESSAGE", "未知错误"))
             return False, msg, booking_id
         except Exception as e:
             logger.error("签到请求失败: %s", e)
