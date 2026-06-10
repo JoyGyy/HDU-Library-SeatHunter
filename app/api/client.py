@@ -45,6 +45,8 @@ class ApiClient:
         resp.raise_for_status()
         data = resp.json()
 
+        now = datetime.now(BJT)
+        today = now.date()
         bookings = []
         items = data.get("content", {}).get("defaultItems", [])
         for item in items:
@@ -56,6 +58,11 @@ class ApiClient:
             duration = item.get("duration", 0)
             begin_time = datetime.fromtimestamp(int(ts), tz=BJT) if ts else None
             end_time = datetime.fromtimestamp(int(ts) + int(duration), tz=BJT) if ts and duration else None
+
+            # 过滤掉已过去的预约（结束时间早于现在）
+            if not include_expired and end_time and end_time < now:
+                continue
+
             booking = {
                 "bookingId": str(item.get("id", "")),
                 "roomName": item.get("roomName", ""),
