@@ -46,15 +46,21 @@ def playwright_login(
 
     try:
         with sync_playwright() as p:
-            browser = p.chromium.launch(
-                headless=True,
-                args=[
-                    "--no-sandbox",
-                    "--disable-dev-shm-usage",
-                    "--disable-gpu",
-                    "--disable-software-rasterizer",
-                ],
-            )
+            # 尝试使用 Firefox（更不容易被检测为机器人）
+            try:
+                browser = p.firefox.launch(headless=True)
+                _log("使用 Firefox 浏览器")
+            except Exception:
+                browser = p.chromium.launch(
+                    headless=True,
+                    args=[
+                        "--no-sandbox",
+                        "--disable-dev-shm-usage",
+                        "--disable-gpu",
+                        "--disable-software-rasterizer",
+                    ],
+                )
+                _log("使用 Chromium 浏览器")
             context = browser.new_context()
             page = context.new_page()
 
@@ -68,6 +74,19 @@ def playwright_login(
                 # 等待页面完全加载
                 page.wait_for_load_state("networkidle")
                 page.wait_for_timeout(5000)  # 等待 JS 执行
+
+                # 检查 JavaScript 是否执行
+                js_check = page.evaluate("() => document.querySelectorAll('input').length")
+                _log(f"页面 input 元素数量: {js_check}")
+
+                # 如果没有 input，尝试强制触发 JS
+                if js_check == 0:
+                    _log("JS 可能未执行，尝试刷新页面...")
+                    page.reload(wait_until="networkidle")
+                    page.wait_for_timeout(5000)
+                    js_check = page.evaluate("() => document.querySelectorAll('input').length")
+                    _log(f"刷新后 input 元素数量: {js_check}")
+
                 page.wait_for_selector("#login-username input", timeout=15000)
             except Exception:
                 # 打印页面 URL 和部分内容用于调试
