@@ -5,16 +5,32 @@
 
 from __future__ import annotations
 
+import base64
 import logging
 import re
 from typing import Optional
 
 import requests
+from Crypto.Cipher import AES
+from Crypto.Util.Padding import pad
 
 logger = logging.getLogger("seathunter.auth")
 
 LOGIN_ERR_NETWORK = "network"
 LOGIN_ERR_AUTH = "auth"
+
+# CAS 加密密钥（从 JavaScript 中提取）
+CAS_AES_KEY = "FzgxPikIetYDlXZM4lRG9taclVDa99lB"
+
+
+def _aes_encrypt(plaintext: str, key: str) -> str:
+    """AES ECB 模式加密，PKCS7 填充，返回 base64。"""
+    key_bytes = key.encode("utf-8")
+    plaintext_bytes = plaintext.encode("utf-8")
+    cipher = AES.new(key_bytes, AES.MODE_ECB)
+    padded = pad(plaintext_bytes, AES.block_size)
+    encrypted = cipher.encrypt(padded)
+    return base64.b64encode(encrypted).decode("utf-8")
 
 
 def cas_login(
@@ -97,11 +113,14 @@ def cas_login(
 
         _log(f"表单参数: execution={execution[:20]}..., lt={lt[:20]}..., croypto={croypto[:20]}...")
 
-        # 3. 提交登录表单
-        _log("正在提交登录表单...")
+        # 3. 加密密码并提交登录表单
+        _log("正在加密密码...")
+        encrypted_password = _aes_encrypt(password, CAS_AES_KEY)
+        _log(f"密码加密完成: {encrypted_password[:20]}...")
+
         login_data = {
             "username": username,
-            "password": password,
+            "password": encrypted_password,
             "execution": execution,
             "lt": lt,
             "_eventId": _eventId,
