@@ -21,4 +21,4 @@ RUN playwright install-deps chromium
 COPY . .
 
 # 启动命令
-CMD ["python", "-m", "uvicorn", "server.main:app", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
