@@ -44,87 +44,63 @@ def playwright_login(
             page = context.new_page()
 
             # 访问图书馆首页（会自动跳转 CAS）
+            logger.info("正在访问图书馆首页...")
             page.goto(library_url, wait_until="networkidle", timeout=60000)
 
-            # 等待 SPA 表单渲染完成
-            page.wait_for_timeout(3000)
+            # 等待 SPA 表单渲染完成（#login-username 有子元素）
+            logger.info("等待 CAS 表单渲染...")
+            page.wait_for_selector("#login-username input", timeout=15000)
+            page.wait_for_timeout(1000)
 
-            # 尝试多种选择器填写账号密码
-            username_selectors = [
-                'input[name="username"]',
-                '#username',
-                'input[placeholder*="学号"]',
-                'input[placeholder*="账号"]',
-                'input[placeholder*="用户"]',
-                'input[type="text"]:first-of-type',
-            ]
-            password_selectors = [
-                'input[name="password"]',
-                '#password',
-                'input[placeholder*="密码"]',
-                'input[type="password"]',
-            ]
-            submit_selectors = [
-                'button[type="submit"]',
-                'input[type="submit"]',
-                '.login-btn',
-                'button:has-text("登录")',
-                'button:has-text("Login")',
-                '.el-button--primary',
-            ]
-
-            # 填写账号
-            filled_username = False
-            for sel in username_selectors:
-                try:
-                    el = page.wait_for_selector(sel, timeout=3000)
-                    if el and el.is_visible():
-                        el.fill(username)
-                        filled_username = True
-                        logger.info("账号填写成功，选择器: %s", sel)
-                        break
-                except Exception:
-                    continue
-
-            if not filled_username:
-                logger.error("找不到账号输入框")
+            # 填写账号（在 #login-username 容器内查找）
+            logger.info("填写账号...")
+            username_input = page.query_selector('#login-username input[type="text"]')
+            if not username_input:
+                username_input = page.query_selector('#login-username input')
+            if not username_input:
+                # 打印页面内容用于调试
+                html = page.content()
+                logger.error("找不到账号输入框，页面片段: %s", html[html.find("login-username"):html.find("login-username")+500] if "login-username" in html else "未找到 login-username")
                 return False, LOGIN_ERR_AUTH, [], "", ""
 
-            # 填写密码
-            filled_password = False
-            for sel in password_selectors:
-                try:
-                    el = page.wait_for_selector(sel, timeout=3000)
-                    if el and el.is_visible():
-                        el.fill(password)
-                        filled_password = True
-                        logger.info("密码填写成功，选择器: %s", sel)
-                        break
-                except Exception:
-                    continue
+            username_input.click()
+            username_input.fill(username)
+            logger.info("账号填写成功")
 
-            if not filled_password:
+            # 填写密码
+            logger.info("填写密码...")
+            password_input = page.query_selector('#login-username input[type="password"]')
+            if not password_input:
+                # 可能是第二个 input
+                inputs = page.query_selector_all('#login-username input')
+                if len(inputs) >= 2:
+                    password_input = inputs[1]
+            if not password_input:
                 logger.error("找不到密码输入框")
                 return False, LOGIN_ERR_AUTH, [], "", ""
 
-            # 点击登录按钮
-            clicked = False
-            for sel in submit_selectors:
-                try:
-                    el = page.wait_for_selector(sel, timeout=3000)
-                    if el and el.is_visible():
-                        el.click()
-                        clicked = True
-                        logger.info("登录按钮点击成功，选择器: %s", sel)
-                        break
-                except Exception:
-                    continue
+            password_input.click()
+            password_input.fill(password)
+            logger.info("密码填写成功")
 
-            if not clicked:
+            # 点击登录按钮
+            logger.info("点击登录按钮...")
+            submit_btn = page.query_selector('#login-username button[type="submit"]')
+            if not submit_btn:
+                submit_btn = page.query_selector('#login-username button')
+            if not submit_btn:
+                submit_btn = page.query_selector('form button[type="submit"]')
+            if not submit_btn:
+                submit_btn = page.query_selector('button[type="submit"]')
+            if not submit_btn:
                 logger.error("找不到登录按钮")
                 return False, LOGIN_ERR_AUTH, [], "", ""
 
+            submit_btn.click()
+            logger.info("登录按钮已点击")
+
             # 等待跳转回 zhishulib.com
+            logger.info("等待跳转...")
             page.wait_for_url("**/huitu.zhishulib.com/**", timeout=30000)
 
             # 提取 cookies
