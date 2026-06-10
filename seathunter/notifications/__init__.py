@@ -1,1 +1,0 @@
-"""Notifications for SeatHunter."""

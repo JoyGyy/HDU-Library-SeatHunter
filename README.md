@@ -2,46 +2,28 @@
 
 ## 脚本介绍
 
-本脚本用于杭电图书馆自习室座位预约，目前支持自动登录、批量预约、定时预约等功能，有以下模块：
-
-* 查看/添加/删除待选座位方案
-* 批量修改方案中预约时间
-* 定时抢座
-* 图形化界面
+本脚本用于杭电图书馆自习室座位预约，支持自动登录、批量预约、定时预约、自动签到等功能。
 
 **本脚本仅限用于个人图书馆预约座位，请勿恶意囤座位！**
 
-## 运行说明
+## 在线使用
 
-0. 本脚本基于Python 3.8+编写，请先安装Python 3.8或更高版本。
-1. 克隆本项目
+直接访问：https://hdu-library-seathunter-production.up.railway.app
 
-``` shell
-git clone https://github.com/stormmmg/HDU-Library-SeatHunter.git
-cd HDU-Library-SeatHunter
-```
-
-2. 安装依赖项
+## 本地部署
 
 ```shell
+git clone https://github.com/stormmmg/HDU-Library-SeatHunter.git
+cd HDU-Library-SeatHunter
 pip install -r requirements.txt
+uvicorn server.main:app --host 0.0.0.0 --port 8080
 ```
 
-3. 运行脚本
+## Docker 部署
 
-``` shell
-python main.py
+```shell
+docker build -t seathunter .
+docker run -p 8080:8080 seathunter
 ```
-
-4. 构建 exe
-
-```
-python build.py
-```
-
-最后根据软件提示登录、查看使用说明。
-
-本脚本基于https://github.com/LittleHeroZZZX/hdu-library-killer改进
 
 最后请各位善用脚本，祝愿各位校友前途似锦，终成所愿。
-

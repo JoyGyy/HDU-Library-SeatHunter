@@ -1,1 +1,0 @@
-"""Platform utilities for SeatHunter."""

@@ -1,1 +1,0 @@
-"""Scheduler engine for SeatHunter."""
