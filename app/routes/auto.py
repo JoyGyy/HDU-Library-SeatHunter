@@ -94,12 +94,19 @@ def _format_booking(b: dict, user: str) -> dict:
     from datetime import datetime
     bt = b.get("beginTime")
     et = b.get("endTime")
+    # 同一天只显示时间，跨天显示完整日期
+    if isinstance(bt, datetime) and isinstance(et, datetime):
+        if bt.date() == et.date():
+            time_str = f"{bt.strftime('%m-%d %H:%M')} - {et.strftime('%H:%M')}"
+        else:
+            time_str = f"{bt.strftime('%m-%d %H:%M')} - {et.strftime('%m-%d %H:%M')}"
+    else:
+        time_str = f"{bt or ''} - {et or ''}"
     return {
         "user": user,
         "roomName": b.get("roomName", ""),
         "seatNum": str(b.get("seatNum", "")),
-        "beginTime": bt.strftime("%Y-%m-%d %H:%M") if isinstance(bt, datetime) else str(bt or ""),
-        "endTime": et.strftime("%H:%M") if isinstance(et, datetime) else str(et or ""),
+        "time": time_str,
         "status": STATUS_MAP.get(str(b.get("status", "")), str(b.get("status", ""))),
         "bookingId": str(b.get("bookingId", "")),
     }

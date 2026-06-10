@@ -29,17 +29,27 @@ class ApiClient:
     def base_url(self) -> str:
         return BASE_URL
 
-    def get_my_bookings(self) -> list[dict[str, Any]]:
-        """获取当前用户的预约列表。"""
+    # 过滤掉的状态：2=已结束, 3=已取消, 4=已过期
+    EXPIRED_STATUSES = {"2", "3", "4"}
+
+    def get_my_bookings(self, include_expired: bool = False) -> list[dict[str, Any]]:
+        """获取当前用户的预约列表。
+
+        Args:
+            include_expired: 是否包含已过期/已取消的预约。
+        """
         url = self.base_url + "/Seat/Index/myBookingList"
         resp = self.session.get(url=url, params={"LAB_JSON": "1"}, timeout=15)
         resp.raise_for_status()
         data = resp.json()
 
         bookings = []
-        # API 返回格式: content.defaultItems[]
         items = data.get("content", {}).get("defaultItems", [])
         for item in items:
+            status = str(item.get("status", ""))
+            if not include_expired and status in self.EXPIRED_STATUSES:
+                continue
+
             ts = item.get("time")
             duration = item.get("duration", 0)
             begin_time = datetime.fromtimestamp(int(ts)) if ts else None
@@ -50,7 +60,7 @@ class ApiClient:
                 "seatNum": str(item.get("seatNum", "")),
                 "beginTime": begin_time,
                 "endTime": end_time,
-                "status": str(item.get("status", "")),
+                "status": status,
             }
             bookings.append(booking)
         return bookings

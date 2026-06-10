@@ -73,7 +73,7 @@ async function fetchBookings() {
             <tr>
               <td>${escapeHtml(b.user)}</td>
               <td>${escapeHtml(b.seatNum)}</td>
-              <td>${escapeHtml(b.beginTime)} - ${escapeHtml(b.endTime)}</td>
+              <td>${escapeHtml(b.time)}</td>
               <td>${escapeHtml(b.status)}</td>
             </tr>
           `).join('')}
