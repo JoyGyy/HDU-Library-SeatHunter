@@ -17,7 +17,7 @@ KNOWN_SEAT_IDS = {"99": "60810", "100": "60811"}
 
 # ─── 时间 ────────────────────────────────────────────────────────────────────────
 BEGIN_HOUR = 10
-DURATION_HOURS = 12
+DURATION_HOURS = 10
 AUTO_BOOK_HOUR = 20
 AUTO_BOOK_MINUTE = 0
 AUTO_CHECKIN_HOUR = 9
