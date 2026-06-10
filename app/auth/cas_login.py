@@ -53,7 +53,6 @@ def playwright_login(
                     "--disable-dev-shm-usage",
                     "--disable-gpu",
                     "--disable-software-rasterizer",
-                    "--single-process",
                 ],
             )
             context = browser.new_context()
@@ -66,6 +65,9 @@ def playwright_login(
             # 等待 SPA 表单渲染完成（#login-username 有子元素）
             _log("等待 CAS 表单渲染...")
             try:
+                # 等待页面完全加载
+                page.wait_for_load_state("networkidle")
+                page.wait_for_timeout(5000)  # 等待 JS 执行
                 page.wait_for_selector("#login-username input", timeout=15000)
             except Exception:
                 # 打印页面 URL 和部分内容用于调试
