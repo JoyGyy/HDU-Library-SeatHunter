@@ -20,30 +20,11 @@ body {
   min-height: 100vh;
 }
 
-#app {
+.app {
   max-width: 480px;
   margin: 0 auto;
   padding: 20px;
   padding-bottom: 40px;
-}
-
-.header {
-  text-align: center;
-  padding: 30px 0 20px;
-}
-
-.header h1 {
-  font-size: 24px;
-  font-weight: 700;
-  margin-bottom: 8px;
-}
-
-.subtitle {
-  font-size: 14px;
-  color: var(--subtext);
-}
-
-.content {
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -56,26 +37,54 @@ body {
   border: 1px solid var(--overlay);
 }
 
-.card-title {
+.card h2 {
   font-size: 16px;
   font-weight: 600;
   margin-bottom: 12px;
 }
 
-.card-info {
-  font-size: 14px;
-  color: var(--subtext);
-  line-height: 1.8;
+.status-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
-.status-row {
+.status-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 4px 0;
 }
 
-.status-badge {
+.status-label {
+  color: var(--subtext);
+  font-size: 14px;
+}
+
+.result-value {
+  font-size: 14px;
+  word-break: break-all;
+}
+
+.result-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(69, 71, 90, 0.3);
+}
+
+.result-row:last-child {
+  border-bottom: none;
+}
+
+.result-label {
+  color: var(--subtext);
+  font-size: 14px;
+  flex-shrink: 0;
+  margin-right: 12px;
+}
+
+.badge {
   display: inline-block;
   padding: 2px 10px;
   border-radius: 6px;
@@ -83,40 +92,85 @@ body {
   font-weight: 600;
 }
 
-.status-badge.success {
+.badge-on {
   background: rgba(166, 227, 161, 0.15);
   color: var(--green);
 }
 
-.status-badge.pending {
-  background: rgba(249, 226, 175, 0.15);
-  color: var(--yellow);
-}
-
-.status-badge.error {
+.badge-off {
   background: rgba(243, 139, 168, 0.15);
   color: var(--red);
 }
 
-.status-badge.info {
+.badge-info {
   background: rgba(137, 180, 250, 0.15);
   color: var(--blue);
 }
 
-.actions {
-  display: flex;
-  gap: 12px;
+.booking-item {
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(69, 71, 90, 0.3);
 }
 
-.actions .btn {
+.booking-item:last-child {
+  border-bottom: none;
+}
+
+.booking-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.booking-user {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.booking-detail {
+  font-size: 13px;
+  color: var(--subtext);
+}
+
+.booking-time {
+  font-size: 13px;
+  color: var(--subtext);
+  margin-top: 2px;
+}
+
+.status-active {
+  background: rgba(166, 227, 161, 0.15);
+  color: var(--green);
+}
+
+.status-pending {
+  background: rgba(249, 226, 175, 0.15);
+  color: var(--yellow);
+}
+
+.status-ended {
+  background: rgba(69, 71, 90, 0.3);
+  color: var(--subtext);
+}
+
+.action-card {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.action-card .btn {
   flex: 1;
+  min-width: 80px;
+  height: 40px;
+  font-size: 13px;
 }
 
 .btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 44px;
   padding: 0 16px;
   border: none;
   border-radius: var(--radius);
@@ -131,62 +185,45 @@ body {
 
 .btn:active { transform: scale(0.97); }
 
-.btn.primary {
+.btn-primary {
   background: var(--blue);
   color: var(--bg);
   border: none;
 }
 
-.btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+.btn-success {
+  background: var(--green);
+  color: var(--bg);
+  border: none;
 }
 
-.loading {
+.btn-warn {
+  background: var(--yellow);
+  color: var(--bg);
+  border: none;
+}
+
+.btn-info {
+  background: var(--overlay);
+  color: var(--text);
+  border: none;
+}
+
+.empty {
   text-align: center;
   color: var(--subtext);
-  padding: 20px 0;
+  padding: 16px 0;
   font-size: 14px;
 }
 
 .log-container {
   max-height: 300px;
   overflow-y: auto;
-  font-size: 13px;
+  font-size: 12px;
   font-family: monospace;
 }
 
-.log-item {
-  padding: 4px 0;
-  border-bottom: 1px solid rgba(69, 71, 90, 0.3);
-}
-
-.log-time {
-  color: var(--overlay);
-  margin-right: 8px;
-}
-
-.log-success { color: var(--green); }
-.log-error { color: var(--red); }
-.log-info { color: var(--subtext); }
-
-.toast {
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  background: var(--surface);
-  color: var(--text);
-  padding: 12px 24px;
-  border-radius: var(--radius);
-  font-size: 14px;
-  z-index: 300;
-  border: 1px solid var(--overlay);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-  transition: opacity 0.3s;
-}
-
-.toast.hidden {
-  opacity: 0;
-  pointer-events: none;
+.log-line {
+  padding: 3px 0;
+  border-bottom: 1px solid rgba(69, 71, 90, 0.2);
 }
