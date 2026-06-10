@@ -31,8 +31,8 @@ class ApiClient:
     def base_url(self) -> str:
         return BASE_URL
 
-    # 过滤掉的状态：2=已结束, 3=已取消, 4=已过期
-    EXPIRED_STATUSES = {"2", "3", "4"}
+    # 过滤掉的状态：2=已结束, 3=已取消, 4=已过期, 7=已确认
+    EXPIRED_STATUSES = {"2", "3", "4", "7"}
 
     def get_my_bookings(self, include_expired: bool = False) -> list[dict[str, Any]]:
         """获取当前用户的预约列表。
