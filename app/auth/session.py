@@ -9,7 +9,7 @@ from typing import Optional
 
 import requests
 
-from app.auth.cas_login import playwright_login, LOGIN_ERR_NETWORK
+from app.auth.cas_login import cas_login, LOGIN_ERR_NETWORK
 from app.config import BASE_URL, DEFAULT_HEADERS, ORG_ID
 
 logger = logging.getLogger("seathunter.auth")
@@ -92,11 +92,10 @@ class SessionManager:
         return False
 
     def _login_with_playwright(self, debug=None) -> tuple[bool, Optional[str]]:
-        """Playwright 浏览器登录。"""
-        success, err_type, cookies, uid, name = playwright_login(
+        """CAS 登录（HTTP 方式）。"""
+        success, err_type, cookies, uid, name = cas_login(
             username=self.student_id,
             password=self.password,
-            library_url=BASE_URL + "/",
             base_url=BASE_URL,
             debug=debug,
         )
@@ -104,9 +103,8 @@ class SessionManager:
         if not success:
             return False, err_type
 
-        # 应用 cookies
-        cookie_dict = {c["name"]: c["value"] for c in cookies}
-        self.session.cookies.update(cookie_dict)
+        # 应用 cookies（cas_login 返回 dict）
+        self.session.cookies.update(cookies)
         self.uid = uid or ""
         self.name = name or ""
 
@@ -114,8 +112,9 @@ class SessionManager:
         if not self.uid:
             self._fetch_user_info()
 
-        # 保存 cookies
-        self._save_cookies(cookies)
+        # 保存 cookies（转换为列表格式保存）
+        cookies_list = [{"name": k, "value": v} for k, v in cookies.items()]
+        self._save_cookies(cookies_list)
         logger.info("登录成功（cookies 已保存）")
         return True, None
 

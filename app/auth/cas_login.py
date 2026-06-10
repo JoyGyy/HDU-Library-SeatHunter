@@ -1,12 +1,15 @@
-"""Playwright CAS SSO 登录。
+"""CAS SSO 登录。
 
-通过浏览器自动化登录杭电 CAS，提取 cookies。
+直接用 HTTP 请求登录，不依赖 Playwright。
 """
 
 from __future__ import annotations
 
 import logging
+import re
 from typing import Optional
+
+import requests
 
 logger = logging.getLogger("seathunter.auth")
 
@@ -14,189 +17,149 @@ LOGIN_ERR_NETWORK = "network"
 LOGIN_ERR_AUTH = "auth"
 
 
-def playwright_login(
+def cas_login(
     username: str,
     password: str,
-    library_url: str,
     base_url: str,
     debug=None,
-) -> tuple[bool, Optional[str], list[dict], str, str]:
-    """Playwright 浏览器自动化登录。
+) -> tuple[bool, Optional[str], dict, str, str]:
+    """HTTP 方式登录 CAS SSO。
 
     Args:
         username: 学号
         password: 密码
-        library_url: 图书馆首页 URL
         base_url: API 基础 URL
-        debug: 可选的 DebugLogger 实例，用于向前端输出日志
+        debug: 可选的 DebugLogger 实例
 
     Returns:
-        (success, error_type, cookies, uid, name)
+        (success, error_type, cookies_dict, uid, name)
     """
     def _log(msg: str):
         logger.info(msg)
         if debug:
             debug.log(msg)
 
-    try:
-        from playwright.sync_api import sync_playwright
-    except ImportError:
-        _log("playwright 未安装")
-        return False, LOGIN_ERR_NETWORK, [], "", ""
+    session = requests.Session()
+    session.verify = False
+    session.headers.update({
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    })
 
     try:
-        with sync_playwright() as p:
-            # 尝试使用 Firefox（更不容易被检测为机器人）
-            try:
-                browser = p.firefox.launch(headless=True)
-                _log("使用 Firefox 浏览器")
-            except Exception:
-                browser = p.chromium.launch(
-                    headless=True,
-                    args=[
-                        "--no-sandbox",
-                        "--disable-dev-shm-usage",
-                        "--disable-gpu",
-                        "--disable-software-rasterizer",
-                    ],
-                )
-                _log("使用 Chromium 浏览器")
-            context = browser.new_context()
-            page = context.new_page()
+        # 1. 访问图书馆首页，获取 CAS 登录 URL
+        _log("正在访问图书馆首页...")
+        resp = session.get(base_url + "/", timeout=30, allow_redirects=False)
 
-            # 访问图书馆首页（会自动跳转 CAS）
-            _log("正在访问图书馆首页...")
-            page.goto(library_url, wait_until="networkidle", timeout=60000)
+        # 从重定向中提取 CAS 登录 URL
+        cas_url = resp.headers.get("Location", "")
+        if not cas_url:
+            _log("未获取到 CAS 重定向地址")
+            return False, LOGIN_ERR_AUTH, {}, "", ""
 
-            # 等待 SPA 表单渲染完成（#login-username 有子元素）
-            _log("等待 CAS 表单渲染...")
-            try:
-                # 等待页面完全加载
-                page.wait_for_load_state("networkidle")
-                page.wait_for_timeout(5000)  # 等待 JS 执行
+        _log(f"CAS 登录地址: {cas_url[:80]}...")
 
-                # 检查 JavaScript 是否执行
-                js_check = page.evaluate("() => document.querySelectorAll('input').length")
-                _log(f"页面 input 元素数量: {js_check}")
+        # 2. 访问 CAS 登录页，获取表单参数
+        _log("正在获取 CAS 登录页...")
+        cas_resp = session.get(cas_url, timeout=30)
+        cas_html = cas_resp.text
 
-                # 如果没有 input，尝试强制触发 JS
-                if js_check == 0:
-                    _log("JS 可能未执行，尝试刷新页面...")
-                    page.reload(wait_until="networkidle")
-                    page.wait_for_timeout(5000)
-                    js_check = page.evaluate("() => document.querySelectorAll('input').length")
-                    _log(f"刷新后 input 元素数量: {js_check}")
+        # 提取隐藏字段
+        execution = ""
+        lt = ""
+        _eventId = "submit"
 
-                page.wait_for_selector("#login-username input", timeout=15000)
-            except Exception:
-                # 打印页面 URL 和部分内容用于调试
-                _log(f"当前页面 URL: {page.url}")
-                html = page.content()
-                _log(f"页面标题: {page.title()}")
-                if "login-username" in html:
-                    _log(f"找到 login-username，内容片段: {html[html.find('login-username'):html.find('login-username')+300]}")
-                else:
-                    _log(f"未找到 login-username，页面前500字符: {html[:500]}")
-                return False, LOGIN_ERR_AUTH, [], "", ""
+        # 提取 execution 参数
+        exec_match = re.search(r'name="execution"\s+value="([^"]*)"', cas_html)
+        if exec_match:
+            execution = exec_match.group(1)
 
-            page.wait_for_timeout(1000)
+        # 提取 lt 参数
+        lt_match = re.search(r'name="lt"\s+value="([^"]*)"', cas_html)
+        if lt_match:
+            lt = lt_match.group(1)
 
-            # 填写账号（在 #login-username 容器内查找）
-            _log("填写账号...")
-            username_input = page.query_selector('#login-username input[type="text"]')
-            if not username_input:
-                username_input = page.query_selector('#login-username input')
-            if not username_input:
-                # 打印所有 input 元素
-                inputs = page.query_selector_all('input')
-                _log(f"页面共有 {len(inputs)} 个 input 元素")
-                for i, inp in enumerate(inputs):
-                    _log(f"  input[{i}]: type={inp.get_attribute('type')}, name={inp.get_attribute('name')}, placeholder={inp.get_attribute('placeholder')}")
-                return False, LOGIN_ERR_AUTH, [], "", ""
+        # 提取 login-croypto（加密参数）
+        croypto = ""
+        croypto_match = re.search(r'id="login-croypto">([^<]*)<', cas_html)
+        if croypto_match:
+            croypto = croypto_match.group(1)
 
-            username_input.click()
-            username_input.fill(username)
-            _log("账号填写成功")
+        _log(f"表单参数: execution={execution[:20]}..., lt={lt[:20]}..., croypto={croypto[:20]}...")
 
-            # 填写密码
-            _log("填写密码...")
-            password_input = page.query_selector('#login-username input[type="password"]')
-            if not password_input:
-                # 可能是第二个 input
-                inputs = page.query_selector_all('#login-username input')
-                if len(inputs) >= 2:
-                    password_input = inputs[1]
-            if not password_input:
-                _log("找不到密码输入框")
-                return False, LOGIN_ERR_AUTH, [], "", ""
+        # 3. 提交登录表单
+        _log("正在提交登录表单...")
+        login_data = {
+            "username": username,
+            "password": password,
+            "execution": execution,
+            "lt": lt,
+            "_eventId": _eventId,
+            "loginType": "normal",
+        }
 
-            password_input.click()
-            password_input.fill(password)
-            _log("密码填写成功")
+        if croypto:
+            login_data["croypto"] = croypto
 
-            # 点击登录按钮
-            _log("点击登录按钮...")
-            submit_btn = page.query_selector('#login-username button[type="submit"]')
-            if not submit_btn:
-                submit_btn = page.query_selector('#login-username button')
-            if not submit_btn:
-                submit_btn = page.query_selector('form button[type="submit"]')
-            if not submit_btn:
-                submit_btn = page.query_selector('button[type="submit"]')
-            if not submit_btn:
-                # 打印所有 button 元素
-                buttons = page.query_selector_all('button')
-                _log(f"页面共有 {len(buttons)} 个 button 元素")
-                for i, btn in enumerate(buttons):
-                    _log(f"  button[{i}]: type={btn.get_attribute('type')}, text={btn.inner_text()[:50]}")
-                return False, LOGIN_ERR_AUTH, [], "", ""
+        login_resp = session.post(
+            cas_url,
+            data=login_data,
+            timeout=30,
+            allow_redirects=True,
+        )
 
-            submit_btn.click()
-            _log("登录按钮已点击")
+        # 检查是否登录成功（应该跳转回 zhishulib.com）
+        final_url = login_resp.url
+        _log(f"登录后跳转到: {final_url[:80]}...")
 
-            # 等待跳转回 zhishulib.com
-            _log("等待跳转...")
-            try:
-                page.wait_for_url("**/huitu.zhishulib.com/**", timeout=30000)
-            except Exception:
-                _log(f"跳转超时，当前 URL: {page.url}")
-                # 检查是否有错误提示
-                error_el = page.query_selector('.error-message, .alert-danger, .login-error, [class*="error"]')
-                if error_el:
-                    _log(f"页面错误提示: {error_el.inner_text()}")
-                return False, LOGIN_ERR_AUTH, [], "", ""
+        if "huitu.zhishulib.com" not in final_url:
+            # 登录失败，检查错误信息
+            if "用户名或密码" in login_resp.text or "密码错误" in login_resp.text:
+                _log("用户名或密码错误")
+                return False, LOGIN_ERR_AUTH, {}, "", ""
+            elif "验证码" in login_resp.text:
+                _log("需要验证码，无法自动登录")
+                return False, LOGIN_ERR_AUTH, {}, "", ""
+            else:
+                _log(f"登录失败，页面内容: {login_resp.text[:200]}")
+                return False, LOGIN_ERR_AUTH, {}, "", ""
 
-            # 提取 cookies
-            cookies = context.cookies()
+        # 4. 提取 cookies
+        cookies = dict(session.cookies)
+        _log(f"获取到 {len(cookies)} 个 cookies")
 
-            # 获取用户信息
-            uid = ""
-            name = ""
-            try:
-                result = page.evaluate("""() => {
-                    return fetch('/Seat/Index/searchSeats?space_category[category_id]=591&space_category[content_id]=3&LAB_JSON=1')
-                        .then(r => r.json())
-                        .then(d => ({uid: d.data?.uid || '', name: d.data?.uname || ''}))
-                }""")
-                uid = str(result.get("uid", ""))
-                name = result.get("name", "")
-            except Exception as e:
-                _log(f"获取用户信息失败: {e}")
-                # 从 cookies 提取 uid
-                for c in cookies:
-                    if c["name"] == "uid":
-                        uid = c["value"]
-                        break
+        # 5. 获取用户信息
+        uid = ""
+        name = ""
+        try:
+            info_resp = session.get(
+                base_url + "/Seat/Index/searchSeats",
+                params={
+                    "space_category[category_id]": "591",
+                    "space_category[content_id]": "3",
+                },
+                timeout=15,
+            )
+            info_data = info_resp.json()
+            if isinstance(info_data, dict) and info_data.get("data"):
+                uid = str(info_data["data"].get("uid", ""))
+                name = info_data["data"].get("uname", "")
+                _log(f"获取用户信息: uid={uid}, name={name}")
+        except Exception as e:
+            _log(f"获取用户信息失败: {e}")
 
-            browser.close()
+        if not uid:
+            # 从 cookies 提取 uid
+            for k, v in cookies.items():
+                if k == "uid":
+                    uid = v
+                    break
 
-            _log(f"CAS 登录成功: uid={uid}, name={name}")
-            return True, None, cookies, uid, name
+        _log(f"CAS 登录成功: uid={uid}, name={name}")
+        return True, None, cookies, uid, name
 
+    except requests.exceptions.ConnectionError as e:
+        _log(f"CAS 登录网络错误: {e}")
+        return False, LOGIN_ERR_NETWORK, {}, "", ""
     except Exception as e:
-        error_msg = str(e)
-        if any(kw in error_msg for kw in ["CONNECTION_RESET", "CONNECTION_REFUSED", "ERR_NAME", "timeout"]):
-            _log(f"CAS 登录网络错误: {e}")
-            return False, LOGIN_ERR_NETWORK, [], "", ""
         _log(f"CAS 登录失败: {e}")
-        return False, LOGIN_ERR_AUTH, [], "", ""
+        return False, LOGIN_ERR_AUTH, {}, "", ""
