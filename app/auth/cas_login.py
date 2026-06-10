@@ -46,7 +46,16 @@ def playwright_login(
 
     try:
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
+            browser = p.chromium.launch(
+                headless=True,
+                args=[
+                    "--no-sandbox",
+                    "--disable-dev-shm-usage",
+                    "--disable-gpu",
+                    "--disable-software-rasterizer",
+                    "--single-process",
+                ],
+            )
             context = browser.new_context()
             page = context.new_page()
 
