@@ -9,6 +9,9 @@ from urllib.parse import urljoin
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad
 
+LOGIN_ERR_NETWORK = "network"
+LOGIN_ERR_AUTH = "auth"
+
 
 def _aes_encrypt(key_b64: str, plaintext: str) -> str:
     """
