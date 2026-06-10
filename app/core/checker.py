@@ -52,7 +52,7 @@ def _checkin_user(student_id: str, password: str, user_name: str,
     # 创建临时 session
     temp_mgr = SessionManager(student_id, password)
     temp_mgr.init_session()
-    success, err = temp_mgr.login()
+    success, err = temp_mgr.login(debug=debug)
     if not success:
         results.append(f"{user_name}: ❌ 登录失败 ({err})")
         return results

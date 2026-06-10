@@ -64,7 +64,7 @@ def get_bookings(request: Request):
     try:
         temp_mgr = SessionManager(COMPANION_STUDENT_ID, COMPANION_PASSWORD)
         temp_mgr.init_session()
-        success, _ = temp_mgr.login()
+        success, _ = temp_mgr.login(debug=debug)
         if success:
             temp_api = ApiClient(temp_mgr)
             for b in temp_api.get_my_bookings():

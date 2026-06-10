@@ -87,7 +87,7 @@ def on_startup() -> None:
             # 自动登录
             state.session_mgr = SessionManager(USER_STUDENT_ID, USER_PASSWORD)
             state.session_mgr.init_session()
-            success, err = state.session_mgr.login()
+            success, err = state.session_mgr.login(debug=debug)
             if success:
                 state.init_after_login()
                 logger.info("自动登录成功: %s", state.session_mgr.name)

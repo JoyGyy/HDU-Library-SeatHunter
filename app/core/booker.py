@@ -68,7 +68,7 @@ def _do_relogin(state: Any, debug: DebugLogger) -> bool:
     """执行 re-login。"""
     try:
         debug.log("执行重新登录...")
-        success, err = state.session_mgr.relogin()
+        success, err = state.session_mgr.relogin(debug=debug)
         if success:
             state.init_after_login()
             debug.log("重新登录成功")

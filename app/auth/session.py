@@ -40,7 +40,7 @@ class SessionManager:
         self.session.verify = False
         self.session.cookies.update({"org_id": ORG_ID})
 
-    def login(self) -> tuple[bool, Optional[str]]:
+    def login(self, debug=None) -> tuple[bool, Optional[str]]:
         """登录：先尝试缓存 cookies，失败则 Playwright 登录。"""
         self._cookie_login_network_err = False
 
@@ -50,12 +50,12 @@ class SessionManager:
         if self._cookie_login_network_err:
             return False, LOGIN_ERR_NETWORK
 
-        return self._login_with_playwright()
+        return self._login_with_playwright(debug)
 
-    def relogin(self) -> tuple[bool, Optional[str]]:
+    def relogin(self, debug=None) -> tuple[bool, Optional[str]]:
         """强制重新登录（跳过 cookie 缓存）。"""
         self._clear_cookies()
-        return self._login_with_playwright()
+        return self._login_with_playwright(debug)
 
     def _login_with_cookies(self) -> bool:
         """尝试使用缓存 cookies 登录。"""
@@ -91,13 +91,14 @@ class SessionManager:
         logger.info("缓存 cookies 无效")
         return False
 
-    def _login_with_playwright(self) -> tuple[bool, Optional[str]]:
+    def _login_with_playwright(self, debug=None) -> tuple[bool, Optional[str]]:
         """Playwright 浏览器登录。"""
         success, err_type, cookies, uid, name = playwright_login(
             username=self.student_id,
             password=self.password,
             library_url=BASE_URL + "/",
             base_url=BASE_URL,
+            debug=debug,
         )
 
         if not success:
