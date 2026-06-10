@@ -26,10 +26,9 @@ server/
 ```
 
 依赖 seathunter 核心库：
-- `BookingRunner` — 预约重试（10 次，间隔 5 秒）
-- `CheckInRunner` — 签到窗口（±25 分钟）
+- `ApiClient` — HTTP 请求（book_seat / check_in / get_my_bookings）
 - `SessionManager` — cookie 管理 + re-login
-- `ApiClient` — HTTP 请求
+- 不直接用 BookingRunner/CheckInRunner（它们需要 Plan 对象，我们简化系统不需要）
 
 ## 配置（硬编码）
 
@@ -76,11 +75,11 @@ book_for_all_dates(state):
 
 ### 关键改进
 
-- 用 `BookingRunner.run_booking()` 替代手动 `book_seat()`
-- 自动重试 10 次，间隔 5 秒
-- 不可重试错误自动跳过（"已有预约"、"座位不可用"）
+- 直接用 `ApiClient.book_seat()` + 简单重试循环（最多 10 次，间隔 5 秒）
+- 不可重试错误自动跳过（"已有预约"、"请勿重复"、"不可用"）
 - 预约人列表自动处理：确保当前用户在列
 - 座位 ID 直接用硬编码，不做复杂搜索
+- CAS 重定向自动 re-login 并重试
 
 ## 签到逻辑（checker.py）
 
@@ -97,8 +96,8 @@ checkin_for_all_users(state):
 
 ### 关键改进
 
-- 每个用户独立 session
-- 签到失败自动重试（最多 10 次）
+- 每个用户独立 session（临时创建，用完销毁）
+- 直接用 `ApiClient.check_in()` + 简单重试循环
 - 间隔 5 秒防封号
 
 ## 调度器（scheduler.py）
