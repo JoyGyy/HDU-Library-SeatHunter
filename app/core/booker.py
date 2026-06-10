@@ -115,10 +115,10 @@ def book_for_all_dates(state: Any, debug: DebugLogger) -> str:
                 debug.log(f"座位 {seat_num} 在 {target_date} 已预约，跳过")
                 continue
 
-            # 动态搜索可用座位 ID
-            seat_id = _find_available_seat(api, seat_num, target_time, debug)
+            seat_id = KNOWN_SEAT_IDS.get(seat_num)
             if not seat_id:
-                results.append(f"{target_date} 座位{seat_num}（我）: ❌ 无可用座位")
+                debug.log(f"座位 {seat_num} 无 ID，跳过")
+                results.append(f"{target_date} 座位{seat_num}: 无ID")
                 continue
 
             # 用你的账号预约
@@ -140,65 +140,16 @@ def book_for_all_dates(state: Any, debug: DebugLogger) -> str:
     return summary
 
 
-def _find_available_seat(api, seat_num: str, target_time: datetime, debug: DebugLogger) -> str | None:
-    """搜索可用的座位 ID（同一座位号在不同房间有多个 ID）。"""
-    import requests as _req
-    try:
-        resp = api.session.post(
-            api.base_url + "/Seat/Index/searchSeats",
-            data={
-                "space_category[category_id]": 591,
-                "space_category[content_id]": 3,
-                "beginTime": int(target_time.timestamp()),
-                "duration": DURATION_HOURS * 3600,
-                "LAB_JSON": 1,
-            },
-            timeout=15,
-        )
-        data = resp.json()
-
-        def find_pois(obj, results=None):
-            if results is None:
-                results = []
-            if isinstance(obj, dict):
-                if "POIs" in obj:
-                    for poi in obj["POIs"]:
-                        if str(poi.get("title", "")) == seat_num:
-                            results.append({
-                                "id": str(poi.get("id", "")),
-                                "state": poi.get("state"),
-                            })
-                for v in obj.values():
-                    find_pois(v, results)
-            elif isinstance(obj, list):
-                for v in obj:
-                    find_pois(v, results)
-            return results
-
-        pois = find_pois(data)
-        # state=0 表示空闲
-        available = [p for p in pois if p["state"] == 0]
-        if available:
-            seat_id = available[0]["id"]
-            debug.log(f"找到可用座位 {seat_num}: ID={seat_id}（共 {len(available)} 个空闲）")
-            return seat_id
-        elif pois:
-            debug.log(f"座位 {seat_num} 全部被占用（共 {len(pois)} 个）")
-            return None
-        else:
-            debug.log(f"未找到座位 {seat_num}")
-            return None
-    except Exception as e:
-        debug.log(f"搜索座位失败: {e}")
-        return KNOWN_SEAT_IDS.get(seat_num)
-
-
 def _book_companion(dates: list[tuple], debug: DebugLogger) -> list[str]:
     """为同伴预约座位 99。"""
     from app.config import COMPANION_STUDENT_ID, COMPANION_PASSWORD
     from app.auth.session import SessionManager
 
     companion_seat = "99"
+    companion_seat_id = KNOWN_SEAT_IDS.get(companion_seat)
+    if not companion_seat_id:
+        return []
+
     debug.log("开始为同伴预约座位 99...")
     results: list[str] = []
 
@@ -228,13 +179,7 @@ def _book_companion(dates: list[tuple], debug: DebugLogger) -> list[str]:
         except Exception:
             pass
 
-        # 动态搜索可用座位 ID
-        seat_id = _find_available_seat(companion_api, companion_seat, target_time, debug)
-        if not seat_id:
-            results.append(f"{target_date} 座位{companion_seat}（同伴）: ❌ 无可用座位")
-            continue
-
-        resp = _book_with_retry(companion_api, seat_id, companion_seat,
+        resp = _book_with_retry(companion_api, companion_seat_id, companion_seat,
                                  [COMPANION_UID], target_time, None, debug)
         code = resp.get("CODE", "")
         msg = resp.get("MESSAGE", resp.get("msg", ""))
