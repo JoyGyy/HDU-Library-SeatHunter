@@ -111,9 +111,17 @@ def cas_login(
         if croypto:
             login_data["croypto"] = croypto
 
+        # 设置正确的请求头
+        headers = {
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Referer": cas_url,
+            "Origin": "https://sso.hdu.edu.cn",
+        }
+
         login_resp = session.post(
             cas_url,
             data=login_data,
+            headers=headers,
             timeout=30,
             allow_redirects=True,
         )
@@ -121,6 +129,9 @@ def cas_login(
         # 检查是否登录成功（应该跳转回 zhishulib.com）
         final_url = login_resp.url
         _log(f"登录后跳转到: {final_url[:80]}...")
+
+        # 检查 cookies 数量
+        _log(f"当前 cookies 数量: {len(session.cookies)}")
 
         if "huitu.zhishulib.com" not in final_url:
             # 登录失败，检查错误信息
@@ -131,7 +142,12 @@ def cas_login(
                 _log("需要验证码，无法自动登录")
                 return False, LOGIN_ERR_AUTH, {}, "", ""
             else:
-                _log(f"登录失败，页面内容: {login_resp.text[:200]}")
+                # 提取错误信息
+                error_match = re.search(r'class="error[^"]*"[^>]*>([^<]+)<', login_resp.text)
+                if error_match:
+                    _log(f"登录错误: {error_match.group(1)}")
+                else:
+                    _log(f"登录失败，页面内容: {login_resp.text[:300]}")
                 return False, LOGIN_ERR_AUTH, {}, "", ""
 
         # 4. 提取 cookies
