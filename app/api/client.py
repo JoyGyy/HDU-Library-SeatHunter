@@ -37,14 +37,19 @@ class ApiClient:
         data = resp.json()
 
         bookings = []
-        raw = data.get("data", {}).get("list", []) if isinstance(data.get("data"), dict) else []
-        for item in raw:
+        # API 返回格式: content.defaultItems[]
+        items = data.get("content", {}).get("defaultItems", [])
+        for item in items:
+            ts = item.get("time")
+            duration = item.get("duration", 0)
+            begin_time = datetime.fromtimestamp(int(ts)) if ts else None
+            end_time = datetime.fromtimestamp(int(ts) + int(duration)) if ts and duration else None
             booking = {
-                "bookingId": item.get("id", ""),
+                "bookingId": str(item.get("id", "")),
                 "roomName": item.get("roomName", ""),
                 "seatNum": str(item.get("seatNum", "")),
-                "beginTime": datetime.fromtimestamp(item["beginTime"]) if item.get("beginTime") else None,
-                "endTime": datetime.fromtimestamp(item["endTime"]) if item.get("endTime") else None,
+                "beginTime": begin_time,
+                "endTime": end_time,
                 "status": str(item.get("status", "")),
             }
             bookings.append(booking)
@@ -58,21 +63,27 @@ class ApiClient:
         booker_uids: list[str],
     ) -> dict[str, Any]:
         """预约座位。"""
+        import re as _re
+
         data, api_token = generate_booking_data(
             begin_time, duration_hours, seat_ids, booker_uids
         )
         url = self.base_url + "/Seat/Index/bookSeats"
         self.session.headers["Api-Token"] = api_token
-        self.session.headers["Content-Length"] = "114"
         try:
             resp = self.session.post(url=url, data=data, timeout=30)
-            return resp.json()
+            try:
+                return resp.json()
+            except Exception:
+                # 服务端返回 HTML 错误页面，提取错误信息
+                err_match = _re.search(r'class="error">([^<]+)', resp.text)
+                msg = err_match.group(1).strip() if err_match else "未知错误"
+                return {"CODE": "error", "MESSAGE": msg}
         except Exception as e:
             logger.error("预约请求失败: %s", e)
             return {"CODE": "error", "MESSAGE": str(e)}
         finally:
             self.session.headers.pop("Api-Token", None)
-            self.session.headers.pop("Content-Length", None)
 
     def check_in(self, booking_id: str) -> tuple[bool, str, str]:
         """签到。"""

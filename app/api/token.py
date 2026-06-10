@@ -40,16 +40,11 @@ def generate_booking_data(
     for i, uid in enumerate(booker_uids):
         data[f"seatBookers[{i}]"] = uid
 
-    # 参数按字母序拼接
-    api_token_str = (
-        f"post&/Seat/Index/bookSeats?LAB_JSON=1"
-        f"&api_time{data['api_time']}"
-        f"&beginTime{data['beginTime']}"
-        f"&duration{data['duration']}"
-        f"&is_recommend0"
-        f"&seatBookers[0]{data['seatBookers[0]']}"
-        f"&seats[0]{data['seats[0]']}"
-    )
+    # 参数按字母序拼接（动态处理所有 seats 和 seatBookers）
+    params = sorted(data.items())
+    token_parts = "".join(f"&{k}{v}" for k, v in params)
+    api_token_str = f"post&/Seat/Index/bookSeats?LAB_JSON=1{token_parts}"
+
     md5 = hashlib.md5(api_token_str.encode("utf-8")).hexdigest()
     api_token = base64.b64encode(md5.encode("utf-8")).decode("utf-8")
 
