@@ -1,0 +1,145 @@
+/* 暗色主题 */
+:root {
+  --bg: #0f1117;
+  --card: #1a1d27;
+  --border: #2a2d3a;
+  --text: #e4e4e7;
+  --text-dim: #9ca3af;
+  --primary: #3b82f6;
+  --success: #22c55e;
+  --warn: #f59e0b;
+  --info: #06b6d4;
+  --danger: #ef4444;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  padding: 1rem;
+}
+
+.app {
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.25rem;
+  margin-bottom: 1rem;
+}
+
+.card h2 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 1rem;
+  color: var(--text-dim);
+}
+
+/* 状态网格 */
+.status-grid {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.status-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.status-label { color: var(--text-dim); font-size: 0.875rem; }
+.result-value { font-weight: 500; font-size: 0.875rem; }
+
+/* 徽章 */
+.badge {
+  display: inline-block;
+  padding: 0.2rem 0.6rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.badge-on { background: rgba(34,197,94,0.15); color: var(--success); }
+.badge-off { background: rgba(239,68,68,0.15); color: var(--danger); }
+.badge-info { background: rgba(6,182,212,0.15); color: var(--info); }
+
+/* 结果行 */
+.result-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.result-row:last-child { border-bottom: none; }
+.result-label { color: var(--text-dim); font-size: 0.875rem; }
+
+/* 预约列表 */
+.booking-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.booking-table th, .booking-table td {
+  padding: 0.5rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+
+.booking-table th { color: var(--text-dim); font-weight: 500; }
+.empty { color: var(--text-dim); text-align: center; padding: 1rem; }
+
+/* 按钮 */
+.action-card {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.btn {
+  flex: 1;
+  min-width: 80px;
+  padding: 0.6rem 1rem;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.btn:hover { opacity: 0.85; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-primary { background: var(--primary); color: white; }
+.btn-success { background: var(--success); color: white; }
+.btn-warn { background: var(--warn); color: white; }
+.btn-info { background: var(--info); color: white; }
+
+/* 日志 */
+.log-container {
+  max-height: 300px;
+  overflow-y: auto;
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 0.75rem;
+  line-height: 1.6;
+  color: var(--text-dim);
+}
+
+.log-line { padding: 0.1rem 0; }
+.log-line:hover { background: rgba(255,255,255,0.03); }
+
+/* 响应式 */
+@media (max-width: 480px) {
+  body { padding: 0.5rem; }
+  .card { padding: 1rem; }
+  .btn { min-width: 60px; padding: 0.5rem; font-size: 0.8rem; }
+}
