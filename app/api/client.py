@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Any
+
+BJT = timezone(timedelta(hours=8))
 
 import requests
 
@@ -52,8 +54,8 @@ class ApiClient:
 
             ts = item.get("time")
             duration = item.get("duration", 0)
-            begin_time = datetime.fromtimestamp(int(ts)) if ts else None
-            end_time = datetime.fromtimestamp(int(ts) + int(duration)) if ts and duration else None
+            begin_time = datetime.fromtimestamp(int(ts), tz=BJT) if ts else None
+            end_time = datetime.fromtimestamp(int(ts) + int(duration), tz=BJT) if ts and duration else None
             booking = {
                 "bookingId": str(item.get("id", "")),
                 "roomName": item.get("roomName", ""),
