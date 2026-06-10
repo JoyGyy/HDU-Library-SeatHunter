@@ -60,16 +60,29 @@ def get_bookings(request: Request):
     except Exception as e:
         debug.log(f"获取你的预约失败: {e}")
 
-    # 同伴的预约
+    # 同伴的预约（缓存 session，避免每次重新登录）
     try:
-        temp_mgr = SessionManager(COMPANION_STUDENT_ID, COMPANION_PASSWORD)
-        temp_mgr.init_session()
-        success, _ = temp_mgr.login(debug=debug)
-        if success:
-            temp_api = ApiClient(temp_mgr)
-            for b in temp_api.get_my_bookings():
-                all_bookings.append(_format_booking(b, "同伴"))
-            temp_mgr.session.close()
+        if app_state.companion_api is None:
+            mgr = SessionManager(COMPANION_STUDENT_ID, COMPANION_PASSWORD)
+            mgr.init_session()
+            success, _ = mgr.login(debug=debug)
+            if success:
+                app_state.companion_api = ApiClient(mgr)
+
+        if app_state.companion_api:
+            try:
+                for b in app_state.companion_api.get_my_bookings():
+                    all_bookings.append(_format_booking(b, "同伴"))
+            except Exception:
+                # session 可能过期，重新登录
+                debug.log("同伴 session 过期，重新登录...")
+                mgr = SessionManager(COMPANION_STUDENT_ID, COMPANION_PASSWORD)
+                mgr.init_session()
+                success, _ = mgr.login(debug=debug)
+                if success:
+                    app_state.companion_api = ApiClient(mgr)
+                    for b in app_state.companion_api.get_my_bookings():
+                        all_bookings.append(_format_booking(b, "同伴"))
     except Exception as e:
         debug.log(f"获取同伴预约失败: {e}")
 

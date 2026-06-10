@@ -37,6 +37,7 @@ class AppState:
     def __init__(self):
         self.session_mgr: SessionManager | None = None
         self.api_client: ApiClient | None = None
+        self.companion_api: ApiClient | None = None
 
     def init_after_login(self) -> None:
         """登录成功后初始化 API 客户端。"""
