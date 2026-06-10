@@ -44,14 +44,85 @@ def playwright_login(
             page = context.new_page()
 
             # 访问图书馆首页（会自动跳转 CAS）
-            page.goto(library_url, wait_until="domcontentloaded", timeout=30000)
+            page.goto(library_url, wait_until="networkidle", timeout=60000)
 
-            # 填写账号密码
-            page.fill('input[name="username"], #username', username)
-            page.fill('input[name="password"], #password', password)
+            # 等待 SPA 表单渲染完成
+            page.wait_for_timeout(3000)
+
+            # 尝试多种选择器填写账号密码
+            username_selectors = [
+                'input[name="username"]',
+                '#username',
+                'input[placeholder*="学号"]',
+                'input[placeholder*="账号"]',
+                'input[placeholder*="用户"]',
+                'input[type="text"]:first-of-type',
+            ]
+            password_selectors = [
+                'input[name="password"]',
+                '#password',
+                'input[placeholder*="密码"]',
+                'input[type="password"]',
+            ]
+            submit_selectors = [
+                'button[type="submit"]',
+                'input[type="submit"]',
+                '.login-btn',
+                'button:has-text("登录")',
+                'button:has-text("Login")',
+                '.el-button--primary',
+            ]
+
+            # 填写账号
+            filled_username = False
+            for sel in username_selectors:
+                try:
+                    el = page.wait_for_selector(sel, timeout=3000)
+                    if el and el.is_visible():
+                        el.fill(username)
+                        filled_username = True
+                        logger.info("账号填写成功，选择器: %s", sel)
+                        break
+                except Exception:
+                    continue
+
+            if not filled_username:
+                logger.error("找不到账号输入框")
+                return False, LOGIN_ERR_AUTH, [], "", ""
+
+            # 填写密码
+            filled_password = False
+            for sel in password_selectors:
+                try:
+                    el = page.wait_for_selector(sel, timeout=3000)
+                    if el and el.is_visible():
+                        el.fill(password)
+                        filled_password = True
+                        logger.info("密码填写成功，选择器: %s", sel)
+                        break
+                except Exception:
+                    continue
+
+            if not filled_password:
+                logger.error("找不到密码输入框")
+                return False, LOGIN_ERR_AUTH, [], "", ""
 
             # 点击登录按钮
-            page.click('button[type="submit"], input[type="submit"], .login-btn')
+            clicked = False
+            for sel in submit_selectors:
+                try:
+                    el = page.wait_for_selector(sel, timeout=3000)
+                    if el and el.is_visible():
+                        el.click()
+                        clicked = True
+                        logger.info("登录按钮点击成功，选择器: %s", sel)
+                        break
+                except Exception:
+                    continue
+
+            if not clicked:
+                logger.error("找不到登录按钮")
+                return False, LOGIN_ERR_AUTH, [], "", ""
 
             # 等待跳转回 zhishulib.com
             page.wait_for_url("**/huitu.zhishulib.com/**", timeout=30000)
