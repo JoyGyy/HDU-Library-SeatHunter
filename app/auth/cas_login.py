@@ -46,31 +46,26 @@ def cas_login(
     })
 
     try:
-        # 1. 访问图书馆首页，获取 CAS 登录 URL
-        _log("正在访问图书馆首页...")
-        resp = session.get(base_url + "/", timeout=30, allow_redirects=False)
+        # 1. 访问图书馆登录入口，获取 CAS 登录 URL
+        _log("正在访问图书馆登录入口...")
+        login_url = base_url + "/User/Index/hduCASLogin"
+        resp = session.get(login_url, timeout=30, allow_redirects=False)
 
         # 从重定向中提取 CAS 登录 URL
         cas_url = resp.headers.get("Location", "")
 
-        # 如果没有重定向，检查响应内容中是否有 CAS 链接
+        # 如果没有重定向，尝试允许重定向
         if not cas_url:
-            _log(f"首页状态码: {resp.status_code}")
-            # 尝试允许重定向
-            resp2 = session.get(base_url + "/", timeout=30, allow_redirects=True)
+            _log(f"登录入口状态码: {resp.status_code}")
+            resp2 = session.get(login_url, timeout=30, allow_redirects=True)
             _log(f"重定向后 URL: {resp2.url[:80]}...")
 
             # 检查是否已经跳转到 CAS
             if "sso.hdu.edu.cn" in resp2.url or "cas.hdu.edu.cn" in resp2.url:
                 cas_url = resp2.url
             else:
-                # 从页面内容中提取 CAS 链接
-                cas_match = re.search(r'href="(https?://[^"]*cas[^"]*)"', resp2.text)
-                if cas_match:
-                    cas_url = cas_match.group(1)
-                else:
-                    _log(f"页面内容片段: {resp2.text[:300]}")
-                    return False, LOGIN_ERR_AUTH, {}, "", ""
+                _log(f"页面内容片段: {resp2.text[:300]}")
+                return False, LOGIN_ERR_AUTH, {}, "", ""
 
         _log(f"CAS 登录地址: {cas_url[:80]}...")
 
