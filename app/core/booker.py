@@ -290,13 +290,6 @@ def _book_with_retry(api: Any, seat_id: str, seat_num: str,
         msg = resp.get("MESSAGE", resp.get("msg", str(resp)))
         debug.log(f"座位 {seat_num} 预约失败: {msg}")
 
-        # 超出预约时间范围：窗口刚开放，短暂等待后重试
-        if "超出" in msg and "时间" in msg:
-            if attempt < MAX_RETRY:
-                debug.log(f"预约窗口可能刚开放，等待 {RETRY_INTERVAL} 秒后重试...")
-                time.sleep(RETRY_INTERVAL)
-                continue
-
         if any(kw in msg for kw in NON_RETRYABLE_ERRORS):
             debug.log(f"不可重试的错误，停止: {msg}")
             return resp
