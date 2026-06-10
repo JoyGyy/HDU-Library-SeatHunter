@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from app.config import (
@@ -61,7 +61,7 @@ def _checkin_user(student_id: str, password: str, user_name: str,
 
     try:
         bookings = temp_api.get_my_bookings()
-        today = datetime.now().date()
+        today = (datetime.utcnow() + timedelta(hours=8)).date()
         checked = 0
 
         for b in bookings:

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import logging
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from app.config import AUTO_BOOK_HOUR, AUTO_BOOK_MINUTE, AUTO_CHECKIN_HOUR, AUTO_CHECKIN_MINUTE
@@ -79,7 +79,7 @@ class AutoScheduler:
         """预约线程：每 30 秒检查，20:00 触发。"""
         last_trigger: str | None = None
         while not self._stop.is_set():
-            now = datetime.now()
+            now = datetime.utcnow() + timedelta(hours=8)
             today = now.strftime("%Y-%m-%d")
             if (now.hour == AUTO_BOOK_HOUR
                     and now.minute == AUTO_BOOK_MINUTE
@@ -100,7 +100,7 @@ class AutoScheduler:
         """签到线程：每 30 秒检查，9:30 触发。"""
         last_trigger: str | None = None
         while not self._stop.is_set():
-            now = datetime.now()
+            now = datetime.utcnow() + timedelta(hours=8)
             today = now.strftime("%Y-%m-%d")
             if (now.hour == AUTO_CHECKIN_HOUR
                     and now.minute == AUTO_CHECKIN_MINUTE

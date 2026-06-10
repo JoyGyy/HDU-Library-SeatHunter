@@ -25,7 +25,7 @@ class DebugLogger:
         self._max = max_lines
 
     def log(self, msg: str) -> None:
-        ts = datetime.now().strftime("%H:%M:%S")
+        ts = (datetime.utcnow() + timedelta(hours=8)).strftime("%H:%M:%S")
         entry = f"[{ts}] {msg}"
         self._lines.append(entry)
         if len(self._lines) > self._max:
@@ -87,7 +87,7 @@ def book_for_all_dates(state: Any, debug: DebugLogger) -> str:
         return "预约失败: 无法登录"
 
     api = state.api_client
-    now = datetime.now()
+    now = datetime.utcnow() + timedelta(hours=8)
     results: list[str] = []
 
     dates = _get_dates_to_book(now, debug)
