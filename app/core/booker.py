@@ -7,6 +7,7 @@ import time
 from datetime import datetime, timedelta
 from typing import Any
 
+from app.api.client import ApiClient
 from app.config import (
     BEGIN_HOUR, COMPANION_UID, DURATION_HOURS, KNOWN_SEAT_IDS,
     MAX_RETRY, NON_RETRYABLE_ERRORS, REQUEST_INTERVAL,
@@ -120,19 +121,81 @@ def book_for_all_dates(state: Any, debug: DebugLogger) -> str:
                 results.append(f"{target_date} 座位{seat_num}: 无ID")
                 continue
 
-            booker_uids = _get_booker_uids(seat_num)
-            resp = _book_with_retry(api, seat_id, seat_num, booker_uids,
+            # 用你的账号预约
+            resp = _book_with_retry(api, seat_id, seat_num, [USER_UID],
                                      target_time, state, debug)
             code = resp.get("CODE", "")
             msg = resp.get("MESSAGE", resp.get("msg", ""))
             if code == "ok":
-                results.append(f"{target_date} 座位{seat_num}: ✅")
+                results.append(f"{target_date} 座位{seat_num}（我）: ✅")
             else:
-                results.append(f"{target_date} 座位{seat_num}: ❌ {msg}")
+                results.append(f"{target_date} 座位{seat_num}（我）: ❌ {msg}")
+
+    # 同伴预约（座位 99）
+    companion_results = _book_companion(dates, debug)
+    results.extend(companion_results)
 
     summary = "; ".join(results) if results else "无需预约"
     debug.log(f"预约完成: {summary}")
     return summary
+
+
+def _book_companion(dates: list[tuple], debug: DebugLogger) -> list[str]:
+    """为同伴预约座位 99。"""
+    from app.config import COMPANION_STUDENT_ID, COMPANION_PASSWORD
+    from app.auth.session import SessionManager
+
+    companion_seat = "99"
+    companion_seat_id = KNOWN_SEAT_IDS.get(companion_seat)
+    if not companion_seat_id:
+        return []
+
+    debug.log("开始为同伴预约座位 99...")
+    results: list[str] = []
+
+    mgr = SessionManager(COMPANION_STUDENT_ID, COMPANION_PASSWORD)
+    mgr.init_session()
+    success, err = mgr.login(debug=debug)
+    if not success:
+        results.append(f"同伴登录失败: {err}")
+        return results
+
+    companion_api = ApiClient(mgr)
+
+    for target_date, target_time in dates:
+        # 检查同伴是否已有预约
+        try:
+            bookings = companion_api.get_my_bookings()
+            has_booking = any(
+                b.get("beginTime") and b["beginTime"].date() == target_date
+                and str(b.get("seatNum")) == companion_seat
+                and str(b.get("status")) in ("0", "1", "5", "6", "7")
+                for b in bookings
+            )
+            if has_booking:
+                debug.log(f"同伴座位 {companion_seat} 在 {target_date} 已预约，跳过")
+                results.append(f"{target_date} 座位{companion_seat}（同伴）: 已预约")
+                continue
+        except Exception:
+            pass
+
+        resp = _book_with_retry(companion_api, companion_seat_id, companion_seat,
+                                 [COMPANION_UID], target_time, None, debug)
+        code = resp.get("CODE", "")
+        msg = resp.get("MESSAGE", resp.get("msg", ""))
+        if code == "ok":
+            results.append(f"{target_date} 座位{companion_seat}（同伴）: ✅")
+        else:
+            results.append(f"{target_date} 座位{companion_seat}（同伴）: ❌ {msg}")
+
+        time.sleep(REQUEST_INTERVAL)
+
+    try:
+        mgr.session.close()
+    except Exception:
+        pass
+
+    return results
 
 
 def _get_dates_to_book(now: datetime, debug: DebugLogger) -> list[tuple]:
@@ -178,9 +241,7 @@ def _check_already_booked(api: Any, target_date, debug: DebugLogger) -> dict[str
 
 
 def _get_booker_uids(seat_num: str) -> list[str]:
-    """返回预约人 UID 列表。"""
-    if seat_num == "99":
-        return [COMPANION_UID, USER_UID]
+    """返回预约人 UID 列表（每个座位只用 1 个 booker）。"""
     return [USER_UID]
 
 
