@@ -199,7 +199,26 @@ def _book_companion(dates: list[tuple], debug: DebugLogger) -> list[str]:
 
 
 def _get_dates_to_book(now: datetime, debug: DebugLogger) -> list[tuple]:
-    """返回需要预约的 (date, datetime) 列表。"""
+    """返回需要预约的 (date, datetime) 列表。
+
+    20:00 自动触发时只预约后天；手动触发时预约今天+明天+后天。
+    """
+    book_available_at = datetime.combine(
+        now.date(),
+        datetime.min.time().replace(hour=AUTO_BOOK_HOUR, minute=AUTO_BOOK_MINUTE)
+    )
+
+    # 20:00 调度器触发：只预约后天
+    if now.hour == AUTO_BOOK_HOUR and now.minute == AUTO_BOOK_MINUTE:
+        target_date = (now + timedelta(days=2)).date()
+        target_time = datetime.combine(
+            target_date,
+            datetime.min.time().replace(hour=BEGIN_HOUR, minute=0)
+        )
+        debug.log(f"调度器触发，预约后天: {target_date}")
+        return [(target_date, target_time)]
+
+    # 手动触发：预约今天+明天+后天（后天需在 20:00 后）
     dates = []
     for delta in [0, 1, 2]:
         target_date = (now + timedelta(days=delta)).date()
@@ -207,14 +226,9 @@ def _get_dates_to_book(now: datetime, debug: DebugLogger) -> list[tuple]:
             target_date,
             datetime.min.time().replace(hour=BEGIN_HOUR, minute=0)
         )
-        if delta == 2:
-            book_available_at = datetime.combine(
-                now.date(),
-                datetime.min.time().replace(hour=AUTO_BOOK_HOUR, minute=AUTO_BOOK_MINUTE)
-            )
-            if now < book_available_at:
-                debug.log(f"后天 ({target_date}) 需在 {book_available_at.strftime('%H:%M')} 后才能预约")
-                continue
+        if delta == 2 and now < book_available_at:
+            debug.log(f"后天 ({target_date}) 需在 {book_available_at.strftime('%H:%M')} 后才能预约")
+            continue
         dates.append((target_date, target_time))
     return dates
 
