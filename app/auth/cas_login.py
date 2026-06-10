@@ -1,31 +1,22 @@
-"""CAS SSO 登录。
-
-直接用 HTTP 请求登录，不依赖 Playwright。
 """
-
-from __future__ import annotations
-
-import base64
-import logging
+CAS SSO 登录模块
+完全模拟 CAS SPA 的表单提交流程
+"""
 import re
-from typing import Optional
-
+import base64
 import requests
+from urllib.parse import urljoin
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad
 
-logger = logging.getLogger("seathunter.auth")
 
-LOGIN_ERR_NETWORK = "network"
-LOGIN_ERR_AUTH = "auth"
-
-# CAS 加密密钥（从 JavaScript 中提取）
-CAS_AES_KEY = "FzgxPikIetYDlXZM4lRG9taclVDa99lB"
-
-
-def _aes_encrypt(plaintext: str, key: str) -> str:
-    """AES ECB 模式加密，PKCS7 填充，返回 base64。"""
-    key_bytes = key.encode("utf-8")
+def _aes_encrypt(key_b64: str, plaintext: str) -> str:
+    """
+    AES-128-ECB 加密，PKCS7 填充。
+    key_b64: base64 编码的密钥（croypto）
+    plaintext: 明文密码
+    """
+    key_bytes = base64.b64decode(key_b64)
     plaintext_bytes = plaintext.encode("utf-8")
     cipher = AES.new(key_bytes, AES.MODE_ECB)
     padded = pad(plaintext_bytes, AES.block_size)
@@ -33,179 +24,166 @@ def _aes_encrypt(plaintext: str, key: str) -> str:
     return base64.b64encode(encrypted).decode("utf-8")
 
 
+def _log(msg: str, debug=None):
+    if debug:
+        debug.log(msg)
+
+
 def cas_login(
     username: str,
     password: str,
     base_url: str,
     debug=None,
-) -> tuple[bool, Optional[str], dict, str, str]:
-    """HTTP 方式登录 CAS SSO。
-
-    Args:
-        username: 学号
-        password: 密码
-        base_url: API 基础 URL
-        debug: 可选的 DebugLogger 实例
-
-    Returns:
-        (success, error_type, cookies_dict, uid, name)
+) -> tuple:
     """
-    def _log(msg: str):
-        logger.info(msg)
-        if debug:
-            debug.log(msg)
+    执行 CAS SSO 登录（模拟 SPA 表单提交）。
+
+    返回: (success, error_type, cookies_dict, uid, name)
+    """
+    _log("开始 CAS 登录...", debug)
 
     session = requests.Session()
-    session.verify = False
     session.headers.update({
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/120.0.0.0 Safari/537.36"
+        ),
     })
 
+    # ---- 第一步：访问图书馆登录入口，获取 CAS 重定向 ----
+    _log("正在访问图书馆登录入口...", debug)
     try:
-        # 1. 访问图书馆登录入口，获取 CAS 登录 URL
-        _log("正在访问图书馆登录入口...")
-        login_url = base_url + "/User/Index/hduCASLogin"
-        resp = session.get(login_url, timeout=30, allow_redirects=False)
+        r = session.get(
+            f"{base_url}/User/Index/hduCASLogin",
+            allow_redirects=True,
+            timeout=15,
+        )
+    except Exception as e:
+        _log(f"访问图书馆登录入口失败: {e}", debug)
+        return False, "network", {}, "", ""
 
-        # 从重定向中提取 CAS 登录 URL
-        cas_url = resp.headers.get("Location", "")
+    cas_url = r.url
+    _log(f"CAS 登录地址: {cas_url[:80]}...", debug)
 
-        # 如果没有重定向，尝试允许重定向
-        if not cas_url:
-            _log(f"登录入口状态码: {resp.status_code}")
-            resp2 = session.get(login_url, timeout=30, allow_redirects=True)
-            _log(f"重定向后 URL: {resp2.url[:80]}...")
+    if "sso.hdu.edu.cn" not in cas_url:
+        _log("未能跳转到 CAS 登录页", debug)
+        return False, "cas_redirect", {}, "", ""
 
-            # 检查是否已经跳转到 CAS
-            if "sso.hdu.edu.cn" in resp2.url or "cas.hdu.edu.cn" in resp2.url:
-                cas_url = resp2.url
-            else:
-                _log(f"页面内容片段: {resp2.text[:300]}")
-                return False, LOGIN_ERR_AUTH, {}, "", ""
+    html = r.text
 
-        _log(f"CAS 登录地址: {cas_url[:80]}...")
+    # ---- 第二步：提取表单参数 ----
+    croypto_match = re.search(r'id="login-croypto">\s*([^<]+)', html)
+    croypto = croypto_match.group(1).strip() if croypto_match else ""
+    _log(f"croypto: {croypto[:30]}...", debug)
 
-        # 2. 访问 CAS 登录页，获取表单参数
-        _log("正在获取 CAS 登录页...")
-        cas_resp = session.get(cas_url, timeout=30)
-        cas_html = cas_resp.text
+    execution_match = re.search(r'name="execution"\s+value="([^"]+)"', html)
+    execution = execution_match.group(1) if execution_match else ""
 
-        # 提取隐藏字段
-        execution = ""
-        lt = ""
-        _eventId = "submit"
+    if not croypto:
+        _log("无法提取 croypto", debug)
+        return False, "croypto", {}, "", ""
 
-        # 提取 execution 参数
-        exec_match = re.search(r'name="execution"\s+value="([^"]*)"', cas_html)
-        if exec_match:
-            execution = exec_match.group(1)
+    if not execution:
+        # 尝试从隐藏 input 提取
+        execution_match = re.search(r'id="login-page-flowkey">\s*([^<]+)', html)
+        execution = execution_match.group(1).strip() if execution_match else ""
 
-        # 提取 lt 参数
-        lt_match = re.search(r'name="lt"\s+value="([^"]*)"', cas_html)
-        if lt_match:
-            lt = lt_match.group(1)
+    _log(f"execution: {execution[:40]}...", debug)
 
-        # 提取 login-croypto（加密参数）
-        croypto = ""
-        croypto_match = re.search(r'id="login-croypto">([^<]*)<', cas_html)
-        if croypto_match:
-            croypto = croypto_match.group(1)
+    # ---- 第三步：加密密码 ----
+    encrypted_password = _aes_encrypt(croypto, password)
+    _log(f"密码加密完成: {encrypted_password[:20]}...", debug)
 
-        _log(f"表单参数: execution={execution[:20]}..., lt={lt[:20]}..., croypto={croypto[:20]}...")
+    # ---- 第四步：提交表单 ----
+    _log("正在提交登录表单...", debug)
 
-        # 3. 加密密码并提交登录表单
-        _log("正在加密密码...")
-        encrypted_password = _aes_encrypt(password, CAS_AES_KEY)
-        _log(f"密码加密完成: {encrypted_password[:20]}...")
+    form_data = {
+        "username": username,
+        "type": "UsernamePassword",
+        "_eventId": "submit",
+        "execution": execution,
+        "croypto": croypto,
+        "password": encrypted_password,
+    }
 
-        login_data = {
-            "username": username,
-            "password": encrypted_password,
-            "execution": execution,
-            "lt": lt,
-            "_eventId": _eventId,
-            "loginType": "normal",
-        }
-
-        if croypto:
-            login_data["croypto"] = croypto
-
-        # 设置正确的请求头
-        headers = {
-            "Content-Type": "application/x-www-form-urlencoded",
-            "Referer": cas_url,
-            "Origin": "https://sso.hdu.edu.cn",
-        }
-
+    try:
         login_resp = session.post(
             cas_url,
-            data=login_data,
-            headers=headers,
-            timeout=30,
+            data=form_data,
+            headers={
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Referer": cas_url,
+                "Origin": "https://sso.hdu.edu.cn",
+            },
             allow_redirects=True,
+            timeout=20,
         )
-
-        # 检查是否登录成功（应该跳转回 zhishulib.com）
-        final_url = login_resp.url
-        _log(f"登录后跳转到: {final_url[:80]}...")
-
-        # 检查 cookies 数量
-        _log(f"当前 cookies 数量: {len(session.cookies)}")
-
-        if "huitu.zhishulib.com" not in final_url:
-            # 登录失败，检查错误信息
-            if "用户名或密码" in login_resp.text or "密码错误" in login_resp.text:
-                _log("用户名或密码错误")
-                return False, LOGIN_ERR_AUTH, {}, "", ""
-            elif "验证码" in login_resp.text:
-                _log("需要验证码，无法自动登录")
-                return False, LOGIN_ERR_AUTH, {}, "", ""
-            else:
-                # 提取错误信息
-                error_match = re.search(r'class="error[^"]*"[^>]*>([^<]+)<', login_resp.text)
-                if error_match:
-                    _log(f"登录错误: {error_match.group(1)}")
-                else:
-                    _log(f"登录失败，页面内容: {login_resp.text[:300]}")
-                return False, LOGIN_ERR_AUTH, {}, "", ""
-
-        # 4. 提取 cookies
-        cookies = dict(session.cookies)
-        _log(f"获取到 {len(cookies)} 个 cookies")
-
-        # 5. 获取用户信息
-        uid = ""
-        name = ""
-        try:
-            info_resp = session.get(
-                base_url + "/Seat/Index/searchSeats",
-                params={
-                    "space_category[category_id]": "591",
-                    "space_category[content_id]": "3",
-                },
-                timeout=15,
-            )
-            info_data = info_resp.json()
-            if isinstance(info_data, dict) and info_data.get("data"):
-                uid = str(info_data["data"].get("uid", ""))
-                name = info_data["data"].get("uname", "")
-                _log(f"获取用户信息: uid={uid}, name={name}")
-        except Exception as e:
-            _log(f"获取用户信息失败: {e}")
-
-        if not uid:
-            # 从 cookies 提取 uid
-            for k, v in cookies.items():
-                if k == "uid":
-                    uid = v
-                    break
-
-        _log(f"CAS 登录成功: uid={uid}, name={name}")
-        return True, None, cookies, uid, name
-
-    except requests.exceptions.ConnectionError as e:
-        _log(f"CAS 登录网络错误: {e}")
-        return False, LOGIN_ERR_NETWORK, {}, "", ""
     except Exception as e:
-        _log(f"CAS 登录失败: {e}")
-        return False, LOGIN_ERR_AUTH, {}, "", ""
+        _log(f"登录请求失败: {e}", debug)
+        return False, "network", {}, "", ""
+
+    _log(f"登录后 URL: {login_resp.url[:80]}...", debug)
+
+    # ---- 第五步：检查登录结果 ----
+    if "huitu.zhishulib.com" not in login_resp.url:
+        _log("登录失败，未跳转到图书馆", debug)
+        # 检查是否有错误信息
+        err_match = re.search(r'login-error-msg[^>]*>([^<]+)', login_resp.text)
+        if err_match and err_match.group(1).strip():
+            _log(f"错误信息: {err_match.group(1).strip()}", debug)
+        return False, "auth", {}, "", ""
+
+    _log("登录成功，已跳转到图书馆", debug)
+
+    # ---- 第六步：获取 cookies 和用户信息 ----
+    cookies = dict(session.cookies)
+    _log(f"获取到 {len(cookies)} 个 cookies", debug)
+
+    uid, name = "", ""
+
+    # 尝试获取用户信息
+    try:
+        me_resp = session.get(
+            f"{base_url}/User/Index/getUserInfo",
+            timeout=10,
+        )
+        if me_resp.status_code == 200:
+            me_data = me_resp.json()
+            _log(f"用户信息: {str(me_data)[:200]}", debug)
+            uid = str(me_data.get("data", {}).get("uid", ""))
+            name = me_data.get("data", {}).get("name", "")
+    except Exception:
+        pass
+
+    if not uid:
+        # 尝试从搜索接口获取用户信息
+        try:
+            search_resp = session.get(
+                f"{base_url}/Seat/Index/searchSeats",
+                params={
+                    "space_category[category_id]": 591,
+                    "space_category[content_id]": 3,
+                    "LAB_JSON": 1,
+                },
+                timeout=10,
+            )
+            if search_resp.status_code == 200:
+                search_data = search_resp.json()
+                uid = str(search_data.get("data", {}).get("uid", ""))
+                name = search_data.get("data", {}).get("uname", "")
+        except Exception:
+            pass
+
+    if uid:
+        _log(f"CAS 登录成功: uid={uid}, name={name}", debug)
+        return True, "", cookies, uid, name
+
+    # cookies 中有 token 也算成功
+    has_token = any(k in cookies for k in ["zhishulib_token", "token", "PHPSESSID", "laravel_session"])
+    if has_token:
+        _log("CAS 登录成功（有 token，但未获取到 uid）", debug)
+        return True, "", cookies, "", ""
+
+    _log("CAS 登录似乎成功，但未获取到有效用户信息", debug)
+    return False, "user_info", {}, "", ""
