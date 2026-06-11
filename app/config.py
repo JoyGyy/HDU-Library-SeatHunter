@@ -19,13 +19,14 @@ KNOWN_SEAT_IDS = {"99": "60810", "100": "60811"}
 BEGIN_HOUR = 10
 DURATION_HOURS = 10
 AUTO_BOOK_HOUR = 20
-AUTO_BOOK_MINUTE = 0
+AUTO_BOOK_MINUTE = 1
 AUTO_CHECKIN_HOUR = 9
-AUTO_CHECKIN_MINUTE = 30
+AUTO_CHECKIN_MINUTE = 31
 
 # ─── 重试 ────────────────────────────────────────────────────────────────────────
-MAX_RETRY = 30
-RETRY_INTERVAL = 3  # 秒
+MAX_RETRY = 100
+RETRY_INTERVAL = 6  # 秒
+RELOGIN_EVERY = 20  # 每 N 次重试后重新登录
 REQUEST_INTERVAL = 5  # 座位/日期之间的间隔，防封号
 
 # ─── API ─────────────────────────────────────────────────────────────────────────

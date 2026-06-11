@@ -9,7 +9,7 @@ from typing import Any
 
 from app.config import (
     COMPANION_PASSWORD, COMPANION_STUDENT_ID,
-    MAX_RETRY, REQUEST_INTERVAL, RETRY_INTERVAL,
+    MAX_RETRY, RELOGIN_EVERY, REQUEST_INTERVAL, RETRY_INTERVAL,
     USER_PASSWORD, USER_STUDENT_ID,
 )
 from app.auth.session import SessionManager
@@ -73,7 +73,7 @@ def _checkin_user(student_id: str, password: str, user_name: str,
 
             booking_id = b.get("bookingId", "")
             seat_num = b.get("seatNum", "")
-            success, msg, _ = _checkin_with_retry(temp_api, booking_id, seat_num, debug)
+            success, msg, _ = _checkin_with_retry(temp_api, booking_id, seat_num, temp_mgr, debug)
             if success:
                 results.append(f"{user_name} 座位{seat_num}: ✅ 签到成功")
                 checked += 1
@@ -95,10 +95,26 @@ def _checkin_user(student_id: str, password: str, user_name: str,
 
 
 def _checkin_with_retry(api: Any, booking_id: str, seat_num: str,
+                         temp_mgr: SessionManager,
                          debug: DebugLogger) -> tuple[bool, str, str]:
-    """带重试的签到。"""
+    """带重试的签到，每 RELOGIN_EVERY 次重新登录刷新 session。"""
     msg = ""
     for attempt in range(1, MAX_RETRY + 1):
+        # 每 N 次重新登录（刷新 session）
+        if attempt > 1 and (attempt - 1) % RELOGIN_EVERY == 0:
+            debug.log(f"已重试 {attempt - 1} 次，重新登录刷新 session...")
+            try:
+                temp_mgr.session.close()
+            except Exception:
+                pass
+            temp_mgr.init_session()
+            success, err = temp_mgr.login(debug=debug)
+            if success:
+                api = ApiClient(temp_mgr)
+                debug.log("重新登录成功")
+            else:
+                debug.log(f"重新登录失败: {err}")
+
         debug.log(f"签到座位 {seat_num} (bookingId: {booking_id}) [尝试 {attempt}/{MAX_RETRY}]")
         success, msg, _ = api.check_in(booking_id)
         if success:

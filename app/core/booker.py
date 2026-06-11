@@ -10,7 +10,7 @@ from typing import Any
 from app.api.client import ApiClient
 from app.config import (
     BEGIN_HOUR, COMPANION_UID, DURATION_HOURS, KNOWN_SEAT_IDS,
-    MAX_RETRY, NON_RETRYABLE_ERRORS, REQUEST_INTERVAL,
+    MAX_RETRY, NON_RETRYABLE_ERRORS, RELOGIN_EVERY, REQUEST_INTERVAL,
     RETRY_INTERVAL, STATUS_MAP, TARGET_SEATS, USER_UID,
     AUTO_BOOK_HOUR, AUTO_BOOK_MINUTE,
 )
@@ -262,9 +262,15 @@ def _get_booker_uids(seat_num: str) -> list[str]:
 def _book_with_retry(api: Any, seat_id: str, seat_num: str,
                       booker_uids: list[str], target_time: datetime,
                       state: Any, debug: DebugLogger) -> dict:
-    """带重试的预约。"""
+    """带重试的预约，每 RELOGIN_EVERY 次重新登录刷新 session。"""
     resp = {}
     for attempt in range(1, MAX_RETRY + 1):
+        # 每 N 次重新登录（刷新 session）
+        if attempt > 1 and (attempt - 1) % RELOGIN_EVERY == 0 and state is not None:
+            debug.log(f"已重试 {attempt - 1} 次，重新登录刷新 session...")
+            if _do_relogin_and_wait(state, debug):
+                api = state.api_client
+
         debug.log(f"预约座位 {seat_num} (ID: {seat_id}) -> {target_time.strftime('%m-%d %H:%M')} [尝试 {attempt}/{MAX_RETRY}]")
 
         resp = api.book_seat(
