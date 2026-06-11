@@ -30,7 +30,6 @@ def checkin_for_all_users(state: Any, debug: DebugLogger) -> str:
     results.extend(your_results)
 
     # 等待间隔
-    debug.log(f"等待 {REQUEST_INTERVAL} 秒后签到同伴...")
     time.sleep(REQUEST_INTERVAL)
 
     # 签到同伴的预约
@@ -99,10 +98,12 @@ def _checkin_with_retry(api: Any, booking_id: str, seat_num: str,
                          debug: DebugLogger) -> tuple[bool, str, str]:
     """带重试的签到，每 RELOGIN_EVERY 次重新登录刷新 session。"""
     msg = ""
+    debug.log(f"开始签到座位 {seat_num}")
+
     for attempt in range(1, MAX_RETRY + 1):
         # 每 N 次重新登录（刷新 session）
         if attempt > 1 and (attempt - 1) % RELOGIN_EVERY == 0:
-            debug.log(f"已重试 {attempt - 1} 次，重新登录刷新 session...")
+            debug.log(f"第 {attempt} 次尝试，重新登录刷新...")
             try:
                 temp_mgr.session.close()
             except Exception:
@@ -111,16 +112,20 @@ def _checkin_with_retry(api: Any, booking_id: str, seat_num: str,
             success, err = temp_mgr.login(debug=debug)
             if success:
                 api = ApiClient(temp_mgr)
-                debug.log("重新登录成功")
             else:
                 debug.log(f"重新登录失败: {err}")
 
-        debug.log(f"签到座位 {seat_num} (bookingId: {booking_id}) [尝试 {attempt}/{MAX_RETRY}]")
         success, msg, _ = api.check_in(booking_id)
         if success:
+            debug.log(f"座位 {seat_num} 签到成功 ✅")
             return True, "", booking_id
-        debug.log(f"签到失败: {msg}")
+
+        # 每 20 次打印一次进度
+        if attempt % 20 == 0:
+            debug.log(f"座位 {seat_num} 已尝试 {attempt} 次，继续重试...")
+
         if attempt < MAX_RETRY:
-            debug.log(f"等待 {RETRY_INTERVAL} 秒后重试...")
             time.sleep(RETRY_INTERVAL)
+
+    debug.log(f"座位 {seat_num} 签到失败: {msg}")
     return False, msg, booking_id

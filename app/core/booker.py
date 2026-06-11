@@ -40,7 +40,7 @@ class DebugLogger:
 def ensure_valid_session(state: Any, debug: DebugLogger) -> bool:
     """确保 session 有效，过期则重新登录。"""
     if state.api_client is None:
-        debug.log("api_client 为空，尝试重新登录...")
+        debug.log("未登录，尝试登录...")
         return _do_relogin(state, debug)
 
     try:
@@ -49,19 +49,15 @@ def ensure_valid_session(state: Any, debug: DebugLogger) -> bool:
             timeout=15,
             allow_redirects=False,
         )
-        if resp.status_code in (301, 302):
-            debug.log("Session 已过期（重定向），重新登录...")
-            return _do_relogin(state, debug)
-        if "CASLogin" in resp.text[:500]:
-            debug.log("Session 已过期（CAS页面），重新登录...")
+        if resp.status_code in (301, 302) or "CASLogin" in resp.text[:500]:
+            debug.log("Session 已过期，重新登录...")
             return _do_relogin(state, debug)
         if resp.status_code != 200:
-            debug.log(f"Session 验证异常: HTTP {resp.status_code}")
+            debug.log("Session 异常，重新登录...")
             return _do_relogin(state, debug)
-        debug.log("Session 有效")
         return True
-    except Exception as e:
-        debug.log(f"Session 验证失败: {e}")
+    except Exception:
+        debug.log("Session 验证失败，重新登录...")
         return _do_relogin(state, debug)
 
 
@@ -95,33 +91,25 @@ def book_for_all_dates(state: Any, debug: DebugLogger) -> str:
 
     for date_idx, (target_date, target_time) in enumerate(dates):
         if date_idx > 0:
-            debug.log(f"等待 {REQUEST_INTERVAL} 秒后预约下一天...")
             time.sleep(REQUEST_INTERVAL)
-
-        debug.log(f"检查 {target_date} 的预约...")
 
         already = _check_already_booked(api, target_date, debug)
         if all(already.values()):
-            debug.log(f"{target_date} 所有座位已预约")
             results.append(f"{target_date}: 已预约")
             continue
 
         for seat_idx, seat_num in enumerate(TARGET_SEATS):
             if seat_idx > 0:
-                debug.log(f"等待 {REQUEST_INTERVAL} 秒后预约下一个座位...")
                 time.sleep(REQUEST_INTERVAL)
 
             if already.get(seat_num):
-                debug.log(f"座位 {seat_num} 在 {target_date} 已预约，跳过")
                 continue
 
             seat_id = KNOWN_SEAT_IDS.get(seat_num)
             if not seat_id:
-                debug.log(f"座位 {seat_num} 无 ID，跳过")
                 results.append(f"{target_date} 座位{seat_num}: 无ID")
                 continue
 
-            # 用你的账号预约
             resp = _book_with_retry(api, seat_id, seat_num, [USER_UID],
                                      target_time, state, debug)
             code = resp.get("CODE", "")
@@ -150,7 +138,7 @@ def _book_companion(dates: list[tuple], debug: DebugLogger) -> list[str]:
     if not companion_seat_id:
         return []
 
-    debug.log("开始为同伴预约座位 99...")
+    debug.log("预约同伴座位 99...")
     results: list[str] = []
 
     mgr = SessionManager(COMPANION_STUDENT_ID, COMPANION_PASSWORD)
@@ -173,7 +161,6 @@ def _book_companion(dates: list[tuple], debug: DebugLogger) -> list[str]:
                 for b in bookings
             )
             if has_booking:
-                debug.log(f"同伴座位 {companion_seat} 在 {target_date} 已预约，跳过")
                 results.append(f"{target_date} 座位{companion_seat}（同伴）: 已预约")
                 continue
         except Exception:
@@ -201,24 +188,24 @@ def _book_companion(dates: list[tuple], debug: DebugLogger) -> list[str]:
 def _get_dates_to_book(now: datetime, debug: DebugLogger) -> list[tuple]:
     """返回需要预约的 (date, datetime) 列表。
 
-    20:00 自动触发时只预约后天；手动触发时预约今天+明天+后天。
+    20:01 自动触发时只预约后天；手动触发时预约今天+明天+后天。
     """
     book_available_at = datetime.combine(
         now.date(),
         datetime.min.time().replace(hour=AUTO_BOOK_HOUR, minute=AUTO_BOOK_MINUTE)
     )
 
-    # 20:00 调度器触发：只预约后天
+    # 20:01 调度器触发：只预约后天
     if now.hour == AUTO_BOOK_HOUR and now.minute == AUTO_BOOK_MINUTE:
         target_date = (now + timedelta(days=2)).date()
         target_time = datetime.combine(
             target_date,
             datetime.min.time().replace(hour=BEGIN_HOUR, minute=0)
         )
-        debug.log(f"调度器触发，预约后天: {target_date}")
+        debug.log(f"自动预约后天: {target_date}")
         return [(target_date, target_time)]
 
-    # 手动触发：预约今天+明天+后天（后天需在 20:00 后）
+    # 手动触发：预约今天+明天+后天（后天需在 20:01 后）
     dates = []
     for delta in [0, 1, 2]:
         target_date = (now + timedelta(days=delta)).date()
@@ -227,9 +214,13 @@ def _get_dates_to_book(now: datetime, debug: DebugLogger) -> list[tuple]:
             datetime.min.time().replace(hour=BEGIN_HOUR, minute=0)
         )
         if delta == 2 and now < book_available_at:
-            debug.log(f"后天 ({target_date}) 需在 {book_available_at.strftime('%H:%M')} 后才能预约")
             continue
         dates.append((target_date, target_time))
+
+    if dates:
+        date_str = ", ".join(str(d[0]) for d in dates)
+        debug.log(f"预约日期: {date_str}")
+
     return dates
 
 
@@ -248,9 +239,8 @@ def _check_already_booked(api: Any, target_date, debug: DebugLogger) -> dict[str
                     status = str(b.get("status", ""))
                     if status in ("0", "1", "5", "6", "7"):
                         result[seat_num] = True
-                        debug.log(f"座位 {seat_num} 在 {target_date} 已有预约 ({STATUS_MAP.get(status, status)})")
-    except Exception as e:
-        debug.log(f"检查已有预约失败: {e}")
+    except Exception:
+        pass
     return result
 
 
@@ -264,14 +254,14 @@ def _book_with_retry(api: Any, seat_id: str, seat_num: str,
                       state: Any, debug: DebugLogger) -> dict:
     """带重试的预约，每 RELOGIN_EVERY 次重新登录刷新 session。"""
     resp = {}
+    debug.log(f"开始预约座位 {seat_num} -> {target_time.strftime('%m-%d %H:%M')}")
+
     for attempt in range(1, MAX_RETRY + 1):
         # 每 N 次重新登录（刷新 session）
         if attempt > 1 and (attempt - 1) % RELOGIN_EVERY == 0 and state is not None:
-            debug.log(f"已重试 {attempt - 1} 次，重新登录刷新 session...")
+            debug.log(f"第 {attempt} 次尝试，重新登录刷新...")
             if _do_relogin_and_wait(state, debug):
                 api = state.api_client
-
-        debug.log(f"预约座位 {seat_num} (ID: {seat_id}) -> {target_time.strftime('%m-%d %H:%M')} [尝试 {attempt}/{MAX_RETRY}]")
 
         resp = api.book_seat(
             begin_time=target_time,
@@ -281,7 +271,7 @@ def _book_with_retry(api: Any, seat_id: str, seat_num: str,
         )
 
         if isinstance(resp, dict) and resp.get("ui_type") == "com.Redirect":
-            debug.log(f"座位 {seat_num} 遇到 CAS 重定向，尝试重新登录...")
+            debug.log(f"座位 {seat_num} 遇到重定向，重新登录...")
             if _do_relogin_and_wait(state, debug):
                 api = state.api_client
                 continue
@@ -290,20 +280,24 @@ def _book_with_retry(api: Any, seat_id: str, seat_num: str,
 
         code = resp.get("CODE", "")
         if code == "ok":
-            debug.log(f"座位 {seat_num} 预约成功")
+            debug.log(f"座位 {seat_num} 预约成功 ✅")
             return resp
 
         msg = resp.get("MESSAGE", resp.get("msg", str(resp)))
-        debug.log(f"座位 {seat_num} 预约失败: {msg}")
 
+        # 不可重试的错误直接返回
         if any(kw in msg for kw in NON_RETRYABLE_ERRORS):
-            debug.log(f"不可重试的错误，停止: {msg}")
+            debug.log(f"座位 {seat_num} 预约失败: {msg}")
             return resp
 
+        # 每 20 次打印一次进度
+        if attempt % 20 == 0:
+            debug.log(f"座位 {seat_num} 已尝试 {attempt} 次，继续重试...")
+
         if attempt < MAX_RETRY:
-            debug.log(f"等待 {RETRY_INTERVAL} 秒后重试...")
             time.sleep(RETRY_INTERVAL)
 
+    debug.log(f"座位 {seat_num} 预约失败，已达最大重试次数")
     return resp
 
 
