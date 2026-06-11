@@ -42,13 +42,65 @@ function updateUI(data) {
   const logEl = document.getElementById('log');
   const logs = data.debug_log || [];
   document.getElementById('logCount').textContent = logs.length;
-  logEl.innerHTML = logs.map(line =>
-    `<div class="log-line">${escapeHtml(line)}</div>`
-  ).join('');
+  logEl.innerHTML = logs.map(line => renderLogEntry(line)).join('');
   logEl.scrollTop = logEl.scrollHeight;
 
   // 预约列表
   fetchBookings();
+}
+
+function renderLogEntry(line) {
+  // 解析时间戳 [HH:MM:SS]
+  const timeMatch = line.match(/^\[(\d{2}:\d{2}:\d{2})\]\s*(.+)$/);
+  if (!timeMatch) {
+    return `<div class="log-entry log-info">
+      <span class="log-icon">📝</span>
+      <span class="log-content">${escapeHtml(line)}</span>
+    </div>`;
+  }
+
+  const time = timeMatch[1];
+  const msg = timeMatch[2];
+
+  // 根据内容判断类型和图标
+  let type = 'log-info';
+  let icon = '📋';
+
+  if (msg.includes('成功') || msg.includes('✅')) {
+    type = 'log-success';
+    icon = '✅';
+  } else if (msg.includes('失败') || msg.includes('❌') || msg.includes('异常')) {
+    type = 'log-error';
+    icon = '❌';
+  } else if (msg.includes('过期') || msg.includes('重新登录') || msg.includes('刷新')) {
+    type = 'log-warning';
+    icon = '🔄';
+  } else if (msg.includes('开始') || msg.includes('触发')) {
+    icon = '🚀';
+  } else if (msg.includes('完成')) {
+    type = 'log-success';
+    icon = '✨';
+  } else if (msg.includes('已尝试') || msg.includes('次尝试')) {
+    type = 'log-progress';
+    icon = '⏳';
+  } else if (msg.includes('预约日期') || msg.includes('自动预约')) {
+    icon = '📅';
+  } else if (msg.includes('登录')) {
+    icon = '🔐';
+  }
+
+  // 高亮关键信息
+  let content = escapeHtml(msg);
+  content = content.replace(/(✅|❌)/g, '<strong>$1</strong>');
+  content = content.replace(/(座位\d+)/g, '<strong>$1</strong>');
+  content = content.replace(/(\d{4}-\d{2}-\d{2})/g, '<strong style="color:var(--info)">$1</strong>');
+  content = content.replace(/(我|同伴)/g, '<strong style="color:var(--warn)">$1</strong>');
+
+  return `<div class="log-entry ${type}">
+    <span class="log-icon">${icon}</span>
+    <span class="log-time">${time}</span>
+    <span class="log-content">${content}</span>
+  </div>`;
 }
 
 async function fetchBookings() {

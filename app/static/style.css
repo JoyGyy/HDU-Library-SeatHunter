@@ -126,16 +126,77 @@ body {
 
 /* 日志 */
 .log-container {
-  max-height: 300px;
+  max-height: 400px;
   overflow-y: auto;
-  font-family: "SF Mono", "Fira Code", monospace;
-  font-size: 0.75rem;
-  line-height: 1.6;
-  color: var(--text-dim);
+  font-size: 0.8rem;
+  line-height: 1.5;
 }
 
-.log-line { padding: 0.1rem 0; }
-.log-line:hover { background: rgba(255,255,255,0.03); }
+.log-entry {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.4rem 0.5rem;
+  border-radius: 6px;
+  margin-bottom: 0.25rem;
+  transition: background 0.2s;
+}
+
+.log-entry:hover { background: rgba(255,255,255,0.03); }
+
+.log-icon {
+  flex-shrink: 0;
+  width: 1.2rem;
+  text-align: center;
+  font-size: 0.85rem;
+}
+
+.log-content {
+  flex: 1;
+  color: var(--text);
+}
+
+.log-time {
+  color: var(--text-dim);
+  font-size: 0.7rem;
+  margin-right: 0.5rem;
+  font-family: "SF Mono", "Fira Code", monospace;
+}
+
+/* 日志类型样式 */
+.log-entry.log-success { background: rgba(34,197,94,0.08); }
+.log-entry.log-success .log-icon { color: var(--success); }
+.log-entry.log-success .log-content { color: var(--success); }
+
+.log-entry.log-error { background: rgba(239,68,68,0.08); }
+.log-entry.log-error .log-icon { color: var(--danger); }
+.log-entry.log-error .log-content { color: var(--danger); }
+
+.log-entry.log-warning { background: rgba(245,158,11,0.08); }
+.log-entry.log-warning .log-icon { color: var(--warn); }
+.log-entry.log-warning .log-content { color: var(--warn); }
+
+.log-entry.log-info .log-icon { color: var(--info); }
+
+.log-entry.log-progress { opacity: 0.7; }
+.log-entry.log-progress .log-icon { color: var(--text-dim); }
+
+/* 日志分组 */
+.log-group {
+  border-left: 2px solid var(--border);
+  margin-left: 0.5rem;
+  padding-left: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.log-group-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  margin-bottom: 0.25rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
 
 /* 响应式 */
 @media (max-width: 480px) {
